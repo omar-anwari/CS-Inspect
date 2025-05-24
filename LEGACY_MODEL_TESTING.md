@@ -1,4 +1,4 @@
-s# Testing Legacy Model Detection
+# Testing Legacy Model Detection
 
 This document outlines how to test the legacy model detection system to ensure it's correctly identifying which skins require legacy models.
 
