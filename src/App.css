@@ -1,0 +1,131 @@
+/* 
+ * Z-index hierarchy:
+ * -1: ModelViewer (background)
+ * 10: General UI elements (header, inputs, controls)
+ * 15: Floating panels (skin list, info panel)
+ * 20: Overlays (background selector, dropdowns)
+ */
+
+.app-container {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  position: relative;
+  padding: 20px;
+  margin-bottom: 20px;
+  z-index: 10; /* Ensure header stays above the model viewer */
+}
+
+.input-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  position: relative;
+  z-index: 10; /* Ensure input stays above the model viewer */
+}
+
+.input-container input {
+  flex: 1;
+  padding: 10px 15px;
+  border-radius: 4px;
+  border: 1px solid var(--accent-color, #555);
+  background-color: rgba(0, 0, 0, 0.3);
+  color: var(--text-color, #fff);
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.input-container input:focus {
+  outline: none;
+  border-color: var(--accent-color, #777);
+  box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb, 85, 85, 85), 0.3);
+}
+
+.input-container button {
+  padding: 10px 20px;
+  background-color: var(--accent-color, #555);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.input-container button:hover {
+  background-color: var(--accent-color-hover, #777);
+}
+
+.error-message {
+  padding: 10px 15px;
+  background-color: rgba(255, 0, 0, 0.1);
+  border-left: 4px solid #ff3b30;
+  color: #ff3b30;
+  margin-bottom: 15px;
+  border-radius: 4px;
+  z-index: 10;
+  position: relative;
+}
+
+.mobile-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  z-index: 10;
+  position: relative;
+}
+
+.mobile-controls button {
+  padding: 8px 12px;
+  background-color: rgba(30, 30, 30, 0.7);
+  color: var(--text-color, #fff);
+  border: 1px solid var(--accent-color, #555);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.mobile-controls button:hover {
+  background-color: var(--accent-color, #555);
+}
+
+/* Background selector */
+.background-selector {
+  position: absolute;
+  top: 80px;
+  right: 20px;
+  background-color: rgba(0, 0, 0, 0.8);
+  padding: 15px;
+  border-radius: 8px;
+  z-index: 20; /* Higher z-index to appear above other UI */
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* Skin List & Info Panel */
+.skin-list,
+.info-panel,
+.sticker-panel {
+  position: absolute;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  padding: 15px;
+  z-index: 15; /* Higher than model viewer but lower than background selector */
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Hide UI for screenshots */
+.hide-ui .app-header,
+.hide-ui .skin-list,
+.hide-ui .info-panel,
+.hide-ui .sticker-panel,
+.hide-ui .model-controls,
+.hide-ui .background-selector,
+.hide-ui .toggle-info-btn {
+  display: none !important;
+}

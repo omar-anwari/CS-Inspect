@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CS:GO Texture Loading Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.135.0/build/three.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f0f0f0;
+    }
+    h1 {
+      color: #333;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .test-btn {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    .test-btn:hover {
+      background-color: #45a049;
+    }
+    .results {
+      margin-top: 20px;
+      border: 1px solid #ddd;
+      padding: 15px;
+      border-radius: 4px;
+    }
+    .test-case {
+      border-bottom: 1px solid #eee;
+      padding: 10px 0;
+    }
+    .test-case:last-child {
+      border-bottom: none;
+    }
+    .status {
+      font-weight: bold;
+    }
+    .success {
+      color: #4CAF50;
+    }
+    .failure {
+      color: #f44336;
+    }
+    .texture-preview {
+      margin: 10px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .texture-item {
+      position: relative;
+      width: 100px;
+      height: 100px;
+      border: 1px solid #ddd;
+      background-color: #f9f9f9;
+      overflow: hidden;
+    }
+    .texture-item canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .texture-label {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: rgba(0,0,0,0.5);
+      color: white;
+      padding: 4px;
+      font-size: 12px;
+      text-align: center;
+    }
+    .log-output {
+      margin-top: 20px;
+      border: 1px solid #ddd;
+      padding: 10px;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>CS:GO Texture Loading Test</h1>
+    <p>This page tests the texture loading system with the new fixes</p>
+    
+    <button class="test-btn" id="run-test">Run Texture Tests</button>
+    <button class="test-btn" id="clear-cache" style="background-color:#f44336;">Clear Cache</button>
+    
+    <div class="results" id="results">
+      <p>Click "Run Texture Tests" to begin testing</p>
+    </div>
+    
+    <h2>Log Output:</h2>
+    <div class="log-output" id="log-output"></div>
+  </div>
+
+  <script>
+    // Test cases for different weapon skins
+    const TEST_CASES = [
+      {
+        name: "AK-47 | Asiimov",
+        materialPattern: "cu_ak47_asiimov",
+        expectedFolder: "custom"
+      },
+      {
+        name: "AWP | Dragon Lore",
+        materialPattern: "cu_medieval_dragon_awp",
+        expectedFolder: "custom"
+      },
+      {
+        name: "Desert Eagle | Blaze",
+        materialPattern: "aa_flames",
+        expectedFolder: "anodized_air"
+      },
+      {
+        name: "M4A4 | Howl",
+        materialPattern: "cu_m4a1_howling",
+        expectedFolder: "custom"
+      }
+    ];
+
+    // Cache for textures
+    const textureCache = {};
+    
+    // Determine the likely folder based on pattern prefix
+    function determineLikelyFolder(pattern) {
+      if (pattern.startsWith('cu_')) return 'custom';
+      if (pattern.startsWith('aa_')) return 'anodized_air';
+      if (pattern.startsWith('am_')) return 'anodized_multi';
+      if (pattern.startsWith('aq_')) return 'antiqued';
+      if (pattern.startsWith('gs_')) return 'gunsmith';
+      if (pattern.startsWith('hy_')) return 'hydrographic';
+      if (pattern.startsWith('sp_')) return 'spray';
+      if (pattern.startsWith('so_')) return 'solid_colors';
+      if (pattern.startsWith('gv_')) return 'gloves';
+      return 'vmats'; // Default folder
+    }
+
+    // Log to the UI
+    function log(message, type = 'info') {
+      const logOutput = document.getElementById('log-output');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      entry.innerHTML = message;
+      logOutput.appendChild(entry);
+      logOutput.scrollTop = logOutput.scrollHeight;
+    }
+
+    // Load a texture from URL
+    async function loadTexture(url) {
+      // Check cache first
+      if (textureCache[url]) {
+        log(`✅ Loaded from cache: ${url}`);
+        return textureCache[url];
+      }
+
+      // Create a new three.js texture loader
+      const loader = new THREE.TextureLoader();
+      
+      return new Promise((resolve, reject) => {
+        loader.load(
+          url,
+          (texture) => {
+            log(`✅ Loaded texture: ${url}`);
+            textureCache[url] = texture;
+            resolve(texture);
+          },
+          undefined, // onProgress callback not supported
+          (error) => {
+            log(`❌ Failed to load texture: ${url}`, 'error');
+            resolve(null); // Resolve with null instead of rejecting
+          }
+        );
+      });
+    }
+
+    // Test a specific material pattern
+    async function testTextureLoading(materialPattern, expectedFolder) {
+      log(`\n===== Testing ${materialPattern} =====`);
+      
+      const resultsDiv = document.getElementById('results');
+      
+      // Create a test case element
+      const testCaseDiv = document.createElement('div');
+      testCaseDiv.className = 'test-case';
+      
+      // Add header with material pattern
+      const header = document.createElement('h3');
+      header.textContent = `Testing: ${materialPattern}`;
+      testCaseDiv.appendChild(header);
+      
+      // Create texture preview container
+      const texturePreview = document.createElement('div');
+      texturePreview.className = 'texture-preview';
+      
+      // Try to load textures for different types
+      const textureTypes = ['color', 'normal', 'pattern', 'rough', 'metal', 'ao'];
+      let successCount = 0;
+      
+      for (const type of textureTypes) {
+        // Generate paths to try
+        const paths = [
+          `/materials/_PreviewMaterials/materials/models/weapons/customization/paints/${expectedFolder}/${materialPattern}_${type}.png`,
+          `/materials/_PreviewMaterials/materials/models/weapons/customization/paints/vmats/${materialPattern}_${type}.png`
+        ];
+        
+        let loaded = false;
+        
+        // Create a texture item element
+        const textureItem = document.createElement('div');
+        textureItem.className = 'texture-item';
+        
+        // Add a label
+        const label = document.createElement('div');
+        label.className = 'texture-label';
+        label.textContent = type;
+        textureItem.appendChild(label);
+        
+        // Try each path
+        for (const path of paths) {
+          try {
+            const texture = await loadTexture(path);
+            if (texture) {
+              // Create a canvas to preview the texture
+              const renderer = new THREE.WebGLRenderer({ alpha: true });
+              renderer.setSize(100, 100);
+              textureItem.appendChild(renderer.domElement);
+              
+              // Set up a simple scene to render the texture
+              const scene = new THREE.Scene();
+              const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+              camera.position.z = 1;
+              
+              const geometry = new THREE.PlaneGeometry(2, 2);
+              const material = new THREE.MeshBasicMaterial({ map: texture });
+              const plane = new THREE.Mesh(geometry, material);
+              scene.add(plane);
+              
+              renderer.render(scene, camera);
+              
+              successCount++;
+              loaded = true;
+              break;
+            }
+          } catch (error) {
+            log(`❌ Error loading texture ${path}: ${error.message}`, 'error');
+          }
+        }
+        
+        // Add status indicator
+        if (!loaded) {
+          const status = document.createElement('div');
+          status.textContent = "❌";
+          status.className = "status failure";
+          textureItem.appendChild(status);
+        }
+        
+        // Add to the preview
+        texturePreview.appendChild(textureItem);
+      }
+      
+      // Add status summary
+      const statusDiv = document.createElement('div');
+      statusDiv.className = 'status ' + (successCount > 0 ? 'success' : 'failure');
+      statusDiv.textContent = `${successCount} of ${textureTypes.length} texture types loaded successfully`;
+      testCaseDiv.appendChild(statusDiv);
+      
+      // Add texture preview
+      testCaseDiv.appendChild(texturePreview);
+      
+      // Add to results
+      resultsDiv.appendChild(testCaseDiv);
+      
+      return successCount > 0;
+    }
+
+    // Run all tests
+    async function runTests() {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<h2>Test Results:</h2>';
+      
+      log("===== Starting Texture Loading Tests =====");
+      log(`Texture cache size at start: ${Object.keys(textureCache).length}`);
+      
+      let passedTests = 0;
+      
+      for (const testCase of TEST_CASES) {
+        const success = await testTextureLoading(testCase.materialPattern, testCase.expectedFolder);
+        if (success) passedTests++;
+        
+        // Add a small delay between tests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Add summary
+      const summaryDiv = document.createElement('div');
+      summaryDiv.innerHTML = `
+        <h2>Test Summary:</h2>
+        <p class="status ${passedTests === TEST_CASES.length ? 'success' : 'failure'}">
+          Passed: ${passedTests}/${TEST_CASES.length} tests
+        </p>
+        <p>Texture cache size: ${Object.keys(textureCache).length} textures</p>
+      `;
+      resultsDiv.appendChild(summaryDiv);
+      
+      log(`\n===== Test Summary =====`);
+      log(`Passed: ${passedTests}/${TEST_CASES.length} tests`);
+      log(`Texture cache size: ${Object.keys(textureCache).length} textures`);
+    }
+
+    // Clear the texture cache
+    function clearCache() {
+      for (const key in textureCache) {
+        if (textureCache[key] && textureCache[key].dispose) {
+          textureCache[key].dispose();
+        }
+        delete textureCache[key];
+      }
+      log('✅ Texture cache cleared');
+      log(`Texture cache size after clearing: ${Object.keys(textureCache).length}`);
+    }
+
+    // Set up event listeners
+    document.getElementById('run-test').addEventListener('click', runTests);
+    document.getElementById('clear-cache').addEventListener('click', clearCache);
+  </script>
+</body>
+</html>

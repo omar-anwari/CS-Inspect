@@ -1,0 +1,62 @@
+{
+  "name": "cs",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@react-three/drei": "^10.0.8",
+    "@react-three/fiber": "^9.1.2",
+    "@react-three/postprocessing": "^3.0.4",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/jest": "^27.5.2",
+    "@types/node": "^16.18.126",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.1",
+    "html2canvas": "^1.4.1",
+    "path-browserify": "^1.0.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.0",
+    "react-scripts": "5.0.1",
+    "three": "^0.175.0",
+    "three-stdlib": "^2.35.14",
+    "typescript": "^4.9.5",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "generate-manifest": "node generate-manifest.js",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "mobile": "node test-mobile.js",
+    "test-legacy": "ts-node src/test-legacyModels.ts",
+    "test-vmat-workflow": "ts-node src/test-vmat-workflow.ts",
+    "test-textures": "ts-node src/test-textures.ts"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@types/path-browserify": "^1.0.3",
+    "@types/three": "^0.175.0",
+    "ts-node": "^10.9.2"
+  }
+}
