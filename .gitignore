@@ -25,11 +25,14 @@ yarn-error.log*
 public/_PreviewStickers/**/*
 !public/_PreviewStickers/
 !public/_PreviewStickers/**/
+!public/_PreviewStickers/**/.gitkeep
 
 public/materials/**/*
 !public/materials/
 !public/materials/**/
+!public/materials/**/.gitkeep
 
 public/models/**/*
 !public/models/
 !public/models/**/
+!public/models/**/.gitkeep
