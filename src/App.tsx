@@ -1,13 +1,15 @@
+// The start of this mess
 import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
-import './theme-dark.css'; // Import our new dark theme
+import './theme-dark.css';
 import html2canvas from 'html2canvas';
-// Import the original InspectTool component
-import InspectTool from './components/InspectTool';
-import ControlsBar from './components/ControlsBar';
-import TextureLoadingTest from './components/TextureLoadingTest';
+import InspectTool from './components/InspectTool'; // Sidebar for item info, figure out images for stickers and keychains
+import ControlsBar from './components/ControlsBar'; // Control bar thing
+import TextureLoadingTest from './components/TextureLoadingTest'; // For testing textures, remove later
 
+
+// Types for stickers, keychains, etc. Add more if needed
 interface Sticker {
   slot: number;
   stickerId: number;
@@ -40,6 +42,8 @@ interface ItemInfo {
   keychains: Keychain[];
 }
 
+
+// Backgrounds, Add more if you want
 const BACKGROUND_OPTIONS = [
   { label: 'None', value: '', preview: '/backgrounds/none.jpg' },
   { label: 'Main', value: 'url(/backgrounds/bg1_1.png)', preview: '/backgrounds/bg1_1.png' },
@@ -49,47 +53,28 @@ const BACKGROUND_OPTIONS = [
   { label: 'Blue', value: 'url(/backgrounds/bg1_5.png)', preview: '/backgrounds/bg1_5.png' },
 ];
 
-const MainApp: React.FC = () => {
-  const [inspectLink, setInspectLink] = useState('');
-  
-  const handleInspectSubmit = (link: string) => {
-    console.log("Inspect link submitted:", link);
-  };
-
-  return (
-    <div className="App">
-      <header className="App-header">
-        <h1>CS Inspect</h1>
-        <p>Inspect CS:GO weapon skins in 3D</p>
-        <Link to="/texture-test" className="test-link">Texture Loading Test</Link>
-      </header>
-      <div className="App-content">
-        <InspectTool 
-          inspectLink={inspectLink} 
-          onInspectSubmit={handleInspectSubmit}
-        />
-      </div>
-    </div>
-  );
-};
-
+// It's a big pile of state and hacks but it "works"
 const App: React.FC = () => {
-  const [inspectLink, setInspectLink] = useState('');
-  const [fetchedItems, setFetchedItems] = useState<ItemInfo[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [bgPreset, setBgPreset] = useState('');
-  const [showInspected, setShowInspected] = useState(true);
-  const [showInfoPanel, setShowInfoPanel] = useState(false);
-  const [showBackgroundSelector, setShowBackgroundSelector] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const screenshotRef = useRef<HTMLDivElement>(null);
+  const [inspectLink, setInspectLink] = useState(''); // What you're inspecting
+  const [fetchedItems, setFetchedItems] = useState<ItemInfo[]>([]); // All the stuff you've looked at
+  const [selectedIndex, setSelectedIndex] = useState(0); // Which one is selected
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark'); // Defaults to dark mode
+  const [bgPreset, setBgPreset] = useState(''); // Backgrounds
+  const [showInspected, setShowInspected] = useState(true); // Show/hide the list
+  const [showInfoPanel, setShowInfoPanel] = useState(false); // Show/hide info
+  const [showBackgroundSelector, setShowBackgroundSelector] = useState(false); // Show/hide bg picker
+  const [isInitialized, setIsInitialized] = useState(false); // Did the iframe hack load
+  const [errorMessage, setErrorMessage] = useState<string | null>(null); // Errors go here
+  const screenshotRef = useRef<HTMLDivElement>(null); // For screenshots, fix it later
 
+
+  // Set the theme on the html tag, so css vars work
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+
+  // iframe hack to get around CORS, no idea if this works
   useEffect(() => {
     const corsProxy = document.createElement('iframe');
     corsProxy.style.display = 'none';
@@ -97,27 +82,23 @@ const App: React.FC = () => {
     document.body.appendChild(corsProxy);
     corsProxy.onload = () => {
       setIsInitialized(true);
-      
-      // Validate models to see what exists
+      // Model validation, probably doesn't do anything
       setTimeout(async () => {
         console.log('Running model validation...');
       }, 2000);
     };
-    
     return () => {
       document.body.removeChild(corsProxy);
     };
   }, []);
 
+
+  // Fetches the item from the API, sometimes breaks
   const handleFetchItem = async () => {
     if (!inspectLink) return;
     setErrorMessage(null);
-    
-    // The InspectTool component will handle the actual API call and 3D model loading
-    // Just reset any existing errors so the InspectTool can show its own loading state
+    // InspectTool does the real work, this is just for legacy reasons
     setErrorMessage(null);
-    
-    // For backward compatibility, we keep the data fetching here too
     try {
       const response = await fetch(
         `https://cstool.omaranwari.com/?url=${encodeURIComponent(inspectLink)}`
@@ -127,9 +108,8 @@ const App: React.FC = () => {
         throw new Error(`Fetch failed: ${response.status} ${response.statusText} - ${text}`);
       }
       const data = await response.json();
-      
       if (data.iteminfo && data.iteminfo.full_item_name) {
-        // Use ModelPreloader to pre-load the model
+        // Try to preload the model, doesn't always work
         const baseWeaponName = data.iteminfo.full_item_name.split('|')[0].trim();
         try {
           const { ModelPreloader } = require('./utils/modelPathResolver');
@@ -137,12 +117,9 @@ const App: React.FC = () => {
         } catch (err) {
           console.warn('Model preloading failed:', err);
         }
-        
-        // Update the fetched items
         setFetchedItems(prevItems => [...prevItems, data.iteminfo]);
         setSelectedIndex(fetchedItems.length);
       }
-      
       setFetchedItems(prev => {
         const next = [...prev, data.iteminfo];
         setSelectedIndex(next.length - 1);
@@ -152,16 +129,21 @@ const App: React.FC = () => {
       console.error('Error fetching item:', err);
       let userMessage = err.message || 'Unknown error occurred';
       if (userMessage.includes('Failed to fetch')) {
-        userMessage = 'Encountered a CORS error—please try clicking "Inspect Item" a few times until it works.';
+        userMessage = 'CORS is being annoying, try clicking Inspect Item again.';
       }
       setErrorMessage(userMessage);
     }
   };
 
+
+  // Toggles for various UI things, don't touch unless you want to break stuff
   const toggleTheme = () => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   const toggleInspected = () => setShowInspected(prev => !prev);
   const toggleInfoPanel = () => setShowInfoPanel(prev => !prev);
 
+
+  // Screenshot function, hides the UI and grabs a png
+  // Model isn't included in the screenshot, fix it later
   const takeScreenshot = async () => {
     if (!screenshotRef.current) return;
     document.body.classList.add('hide-ui');
@@ -178,6 +160,8 @@ const App: React.FC = () => {
     }, 100);
   };
 
+
+  // Wait for the iframe hack to load
   if (!isInitialized) {
     return <div className="loading-screen">Initializing...</div>;
   }

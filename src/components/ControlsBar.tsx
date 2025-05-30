@@ -1,19 +1,27 @@
+// This is the bar at the top and the controls at the bottom of the page
+
 import React, { useState } from 'react';
 import './ControlsBar.css';
 
+
+// Toggling the info panel, screenshotting, and submitting the inspect links
 interface ControlsBarProps {
   onSubmitInspectLink: (link: string) => void;
   onScreenshotClick?: () => void;
   onToggleInfoPanelClick?: () => void;
 }
 
+
+// The actual component. Handles the inspect link input, and submit..
 const ControlsBar: React.FC<ControlsBarProps> = ({
   onSubmitInspectLink,
   onScreenshotClick,
   onToggleInfoPanelClick
 }) => {
+  // State for the inspect link input
   const [inspectLink, setInspectLink] = useState('');
 
+  // Called when you try to submit the inspect link. If it works, great. If not, well, you tried.
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inspectLink.trim()) {
@@ -26,6 +34,7 @@ const ControlsBar: React.FC<ControlsBarProps> = ({
       <div className="controls-bar-content">
         <div className="logo">CS Inspect</div>
         
+        {/* Inspect Link Form: Paste your inspect link and hope that CORs doesn't break it */}
         <form onSubmit={handleSubmit} className="inspect-form">
           <div className="inspect-input-wrapper">
             <svg className="inspect-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -44,10 +53,11 @@ const ControlsBar: React.FC<ControlsBarProps> = ({
           </button>
         </form>
 
+        {/* Screenshot and Info Panel toggles */}
         <div className="controls-actions">
           {onToggleInfoPanelClick && (
             <button 
-              className="action-button" 
+              className="action-button"
               onClick={onToggleInfoPanelClick}
               title="Toggle Info Panel"
             >

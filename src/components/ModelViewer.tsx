@@ -1,15 +1,16 @@
+// This is the 3D model viewer. Tried to make Three.js and React play nice together, hopefully they play nice together
 import React, { Suspense, useEffect, useState, useRef, Component, ErrorInfo, ReactNode, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { 
+import {
   OrbitControls,
   useGLTF,
   Environment,
   Stats,
   Box
 } from '@react-three/drei';
-import { 
+import {
   getBaseWeaponName,
-  resolveModelPath 
+  resolveModelPath
 } from '../utils/modelPathResolver';
 import {
   isLegacyModel,
@@ -18,8 +19,7 @@ import {
 import { parseVMAT } from '../vmatParser';
 import * as THREE from 'three';
 
-
-// Custom error boundary component
+// Sometimes Three.js just gives up and I don't want the whole thing to die
 class ErrorBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
   { hasError: boolean }
@@ -46,7 +46,7 @@ class ErrorBoundary extends Component<
   }
 }
 
-// Define interfaces for our component
+// Info about the stickers on the gun
 interface Sticker {
   slot: number;
   stickerId: number;
@@ -59,6 +59,7 @@ interface Sticker {
   wear?: number;
 }
 
+// Keychain: Like stickers, but danglier
 interface Keychain {
   slot: number;
   sticker_id: number;
@@ -66,6 +67,7 @@ interface Keychain {
   name: string;
 }
 
+// All the info about the item, including its name, wear, stickers, and other fun stuff
 interface ItemInfo {
   full_item_name: string;
   wear_name: string;
@@ -80,6 +82,7 @@ interface ItemInfo {
   keychains: Keychain[];
 }
 
+// All the props you can pass in to make the model viewer do tricks
 interface ModelViewerProps {
   itemName?: string;
   itemData?: ItemInfo;
@@ -88,23 +91,23 @@ interface ModelViewerProps {
   autoRotate?: boolean;
 }
 
-// Define the ref type for the ModelViewer component
+// To poke the viewer from outside and make it reset
 export interface ModelViewerRef {
   resetView: () => void;
 }
 
-// Simple component to render a 3D model with materials
+// Loads a 3D model and tries to slap a skin on it
 const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: boolean }> = ({ path, itemData, autoRotate = true }) => {
-  // Error handling state
+  // State for when things go wrong (which is often)
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const modelRef = useRef<THREE.Group>(null);
   const [isLoaded, setIsLoaded] = useState(false);
-  
-  // Pre-validate the GLTF file format
+
+  // Pre-validate the GLTF file format (because sometimes you get a 404)
   useEffect(() => {
     console.log('Pre-validating model from path:', path);
-    
+
     fetch(path)
       .then(response => {
         if (!response.ok) {
@@ -131,15 +134,15 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
         setErrorMessage(`Failed to load model: ${error.message}`);
       });
   }, [path]);
-  
+
   // Load the model with three.js
   const { scene } = useGLTF(path);
-  
-  // Apply textures if available
+
+  // Apply textures if available (or just slap on a gray material which we don't want)
   useEffect(() => {
     if (scene && itemData?.paintindex) {
       // Here you would handle material application based on the VMAT system
-      // For now, we'll just set a basic material for demonstration purposes
+      // For now, we'll just set a basic material for demonstration purposes, fix this later
       scene.traverse((child: THREE.Object3D) => {
         if (child instanceof THREE.Mesh) {
           if (child.material) {
@@ -155,7 +158,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
     }
     setIsLoaded(true);
   }, [scene, itemData]);
-  
+
   useFrame(() => {
     if (modelRef.current) {
       // Only rotate if autoRotate is true
@@ -164,38 +167,33 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
       }
     }
   });
-  
+
   return (
-    <primitive 
-      object={scene} 
+    <primitive
+      object={scene}
       ref={modelRef}
-      scale={0.1} 
+      scale={0.1}
       position={[0, 0, 0]}
     />
   );
 };
 
-// Main ModelViewer component
-// Define interface for ModelViewer ref
-interface ModelViewerRefInterface {
-  resetView: () => void;
-}
-
-// Main ModelViewer component
+// Main ModelViewer component. This is where the 3D stuff actually gets put on the screen
 const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   itemData,
   backgroundColor = 'transparent',
   showStats = false,
   autoRotate = true
 }, ref) => {
+  // State for model path, loading, and error
   const [modelPath, setModelPath] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Create refs for camera and controls
+
+  // Refs for camera and controls (so you can reset the view when you press the button)
   const orbitControlsRef = useRef<any>(null);
-  
-  // Function to check if a file exists by making a HEAD request
+
+  // Function to check if a file exists by making a HEAD request (because 404s are a thing)
   const checkFileExists = async (url: string): Promise<boolean> => {
     try {
       const response = await fetch(url, { method: 'HEAD' });
@@ -206,7 +204,7 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
     }
   };
 
-  // Determine the correct model path when itemData changes
+  // Figure out which model to load based on the item data
   useEffect(() => {
     const loadModel = async () => {
       if (!itemData || !itemData.full_item_name) {
@@ -214,32 +212,32 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
         setLoading(false);
         return;
       }
-      
+
       try {
         setLoading(true);
-        
+
         // Get the base weapon name from the full item name
         const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
         console.log('Base weapon name:', baseWeaponName);
-        
+
         // Check if this weapon should use a legacy model based on both weapon and skin
         const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
         console.log('Is legacy model?', useLegacyModel, 'Paint Index:', itemData.paintindex, 'Item:', itemData.full_item_name);
-        
+
         // Get the path to the model file
         const path = resolveModelPath(baseWeaponName, useLegacyModel);
         console.log('Model path:', path);
-        
+
         if (!path) {
           setError(`Could not resolve model path for weapon: ${baseWeaponName}`);
           setLoading(false);
           return;
         }
-        
+
         // Pre-validate that the model file exists
         const fullModelPath = window.location.origin + path;
         console.log('Full resolved model path:', fullModelPath);
-        
+
         const fileExists = await checkFileExists(path);
         if (!fileExists) {
           // If the model doesn't exist in the regular path, try the legacy path if we weren't already using it
@@ -254,12 +252,12 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
               return;
             }
           }
-          
+
           setError(`Model file not found: ${path}`);
           setLoading(false);
           return;
         }
-        
+
         setModelPath(path);
         setError(null);
       } catch (err) {
@@ -268,68 +266,70 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
         setLoading(false);
       }
     };
-    
+
     loadModel();
   }, [itemData]);
-  
-  // Create refs to store controls and camera with proper types
+
+  // Camera and controls types
   type CameraWithFOV = THREE.Camera & {
     fov?: number;
     updateProjectionMatrix?: () => void;
   };
-  
+
   type ControlsWithReset = {
     reset?: () => void;
   };
 
   const controlsRef = useRef<ControlsWithReset | null>(null);
   const cameraRef = useRef<CameraWithFOV | null>(null);
-  
-  // Component to access camera and controls
+
+  //  Lets me mess with the camera and controls from outside
   const CameraControlsManager = () => {
     const { camera, controls } = useThree();
-    
+
     useEffect(() => {
       cameraRef.current = camera as CameraWithFOV;
       if (controls) {
         controlsRef.current = controls as ControlsWithReset;
       }
     }, [camera, controls]);
-    
+
     return null;
   };
-  
+
   // Expose resetView method to parent component
   useImperativeHandle(ref, () => ({
     resetView: () => {
       if (cameraRef.current && cameraRef.current.position) {
         cameraRef.current.position.set(0, 0, 2.5);
-        
+
         if (cameraRef.current.fov !== undefined && cameraRef.current.updateProjectionMatrix) {
           cameraRef.current.fov = 50;
           cameraRef.current.updateProjectionMatrix();
         }
       }
-      
+
       // Reset controls if available
       if (controlsRef.current && controlsRef.current.reset) {
         controlsRef.current.reset();
       }
     }
   }));
-  
+
+  // --- UI Rendering Section ---
+
   if (loading) {
     return <div className="model-loader">Loading model...</div>;
   }
-  
+
   if (error) {
     return <div className="model-error">Error: {error}</div>;
   }
-  
+
   if (!modelPath) {
     return <div className="model-error">No model available</div>;
   }
-  
+
   return (
     <div style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
       <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
@@ -348,7 +348,7 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
             <Environment preset="forest" />
           </ErrorBoundary>
         </Suspense>
-        <OrbitControls 
+        <OrbitControls
           enablePan={true}
           enableZoom={true}
           enableRotate={true}

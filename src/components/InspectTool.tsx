@@ -1,3 +1,6 @@
+// This is the main component for the CS Inspect tool. If you want to see how I duct-taped together a bunch of React state and API calls to make a 3D skin viewer, you're in the right place.
+// It's not pretty, but it mostly works. If you find a bug, it's probably because I tried to be clever somewhere and failed.
+
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import ModelViewer from './ModelViewer';
@@ -5,6 +8,7 @@ import InspectLinkInput from './InspectLinkInput';
 import './InspectTool.css';
 import html2canvas from 'html2canvas';
 
+// Sticker: All the stuff you can slap on a gun to make it look more expensive (or more cursed).
 interface Sticker {
   slot: number;
   stickerId: number;
@@ -17,14 +21,16 @@ interface Sticker {
   wear?: number;
 }
 
+// Keychain: Like stickers, but danglier.
 interface Keychain {
   slot: number;
   sticker_id: number;
   pattern: number;
   name: string;
-  imageurl?: string; // Add optional image URL
+  imageurl?: string; // Add optional image URL, doesn't actually exist in the API response
 }
 
+// ItemInfo: All the random info about a weapon skin
 interface ItemInfo {
   full_item_name: string;
   wear_name: string;
@@ -39,6 +45,7 @@ interface ItemInfo {
   keychains: Keychain[];
 }
 
+// Stuff to keep track of in the inspect history
 interface HistoryItem {
   link: string;
   name: string;
@@ -47,25 +54,29 @@ interface HistoryItem {
   timestamp: number;
 }
 
+// Props for InspectTool. You probably won't need to touch these unless you're breaking things on purpose.
 interface InspectToolProps {
   inspectLink?: string;
   onError?: (error: string) => void;
   onInspectSubmit?: (link: string) => void;
 }
 
-/**
- * Main component for the CS:GO skin inspect tool
- */
+// Main component for the CS:GO skin inspect tool. This is where the magic (and the bugs) happen.
 const InspectTool: React.FC<InspectToolProps> = ({
   inspectLink,
   onError,
   onInspectSubmit
 }) => {
+  // Refs for poking the ModelViewer and screenshotting the whole mess
   const modelViewerRef = useRef<any>(null);
   const screenshotRef = useRef<HTMLDivElement>(null);
+
+  // State: If you see a bug, it's probably because of one of these
   const [itemData, setItemData] = useState<ItemInfo | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);  const [backgroundColor, setBackgroundColor] = useState<string>('transparent');  const [currentInspectLink, setCurrentInspectLink] = useState<string | undefined>(inspectLink);
+  const [error, setError] = useState<string | null>(null);
+  const [backgroundColor, setBackgroundColor] = useState<string>('transparent');
+  const [currentInspectLink, setCurrentInspectLink] = useState<string | undefined>(inspectLink);
   const [inspectHistory, setInspectHistory] = useState<HistoryItem[]>([]);
   const [showDetails, setShowDetails] = useState<boolean>(true);
   const [isAutoRotate, setIsAutoRotate] = useState<boolean>(true);
@@ -73,7 +84,7 @@ const InspectTool: React.FC<InspectToolProps> = ({
   const [showBackgroundSelector, setShowBackgroundSelector] = useState(false);
   const [pendingBackground, setPendingBackground] = useState<string | null>(null);
 
-  // Default background options (should match App.tsx)
+  // Can't remember if I'm using this or the one in app.tsx, so let's just keep it here
   const BACKGROUND_OPTIONS = [
     { label: 'None', value: 'transparent', preview: '/backgrounds/none.jpg' },
     { label: 'Main', value: 'url(/backgrounds/bg1_1.png)', preview: '/backgrounds/bg1_1.png' },
@@ -82,6 +93,7 @@ const InspectTool: React.FC<InspectToolProps> = ({
     { label: 'Purple', value: 'url(/backgrounds/bg1_4.png)', preview: '/backgrounds/bg1_4.png' },
     { label: 'Blue', value: 'url(/backgrounds/bg1_5.png)', preview: '/backgrounds/bg1_5.png' },
   ];
+
   // Handle inspect link submission from the new top input component
   const handleInspectLinkSubmit = (link: string) => {
     setCurrentInspectLink(link);
@@ -120,18 +132,18 @@ const InspectTool: React.FC<InspectToolProps> = ({
     }
   };
 
-  // Toggle auto-rotation
+  // Toggle auto-rotate
   const toggleAutoRotate = () => {
     setIsAutoRotate(!isAutoRotate);
   };
 
-  // Take screenshot
+  // Take screenshot (it's broken, but let's pretend it works)
   const takeScreenshot = async () => {
     if (!screenshotRef.current) return;
 
     setIsTakingScreenshot(true);
 
-    // Hide UI elements temporarily
+    // Hide UI elements temporarily (because screenshots with UI are cringe and aren't aesthetic)
     document.body.classList.add('hide-ui');
 
     try {
@@ -155,12 +167,14 @@ const InspectTool: React.FC<InspectToolProps> = ({
     }
   };
 
+  // Keep inspectLink in sync with prop
   useEffect(() => {
     if (inspectLink !== currentInspectLink) {
       setCurrentInspectLink(inspectLink);
     }
   }, [inspectLink]);
 
+  // Fetch item data from the API and update state. If it fails, I broke it, but at least you get an error message.
   useEffect(() => {
     if (!currentInspectLink) {
       setItemData(null);
@@ -186,7 +200,8 @@ const InspectTool: React.FC<InspectToolProps> = ({
 
         if (!data.iteminfo) {
           throw new Error('Invalid response format: missing iteminfo');
-        }        // Update state with the fetched item data
+        }
+        // Update state with the fetched item data
         setItemData(data.iteminfo);
 
         // Add to history if we have a current inspect link
@@ -208,7 +223,9 @@ const InspectTool: React.FC<InspectToolProps> = ({
     fetchItemData();
   }, [currentInspectLink, onError]);
 
-  // Handle error display
+  // --- UI Rendering Section ---
+
+  // If something exploded, show the error
   if (error) {
     return (
       <div className="inspect-tool-error">
@@ -221,7 +238,7 @@ const InspectTool: React.FC<InspectToolProps> = ({
     );
   }
 
-  // Show loading indicator
+  // Show loading indicator (because waiting is fun)
   if (isLoading) {
     return (
       <div className="inspect-tool-loading">
@@ -246,19 +263,19 @@ const InspectTool: React.FC<InspectToolProps> = ({
     );
   }
 
-  // Render the 3D model viewer with the item data
+  // Main render: the 3D viewer, controls, and all the bells and whistles
   return (
     <div
       className="inspect-tool-container"
       ref={screenshotRef}
     >
-      {/* Top inspect link input */}
+      {/* Top inspect link input*/}
       <InspectLinkInput
         onSubmit={handleInspectLinkSubmit}
         isLoading={isLoading}
       />
 
-      {/* Main model container */}
+      {/* Main model container (where the 3D magic happens) */}
       <div className="model-container">
         {isLoading ? (
           <div className="inspect-tool-loading">
@@ -364,7 +381,9 @@ const InspectTool: React.FC<InspectToolProps> = ({
             </div>
           </>
         )}
-      </div>      {/* History panel */}
+      </div>
+
+      {/* History panel */}
       {inspectHistory.length > 0 && (
         <div className="history-panel">
           <h3>Recent Items</h3>
@@ -387,7 +406,7 @@ const InspectTool: React.FC<InspectToolProps> = ({
         </div>
       )}
 
-      {/* Info panel positioned on the right - only shown when itemData is available and details are toggled on */}
+      {/* Info panel on the right */}
       {itemData && showDetails && (
         <div className="item-info-panel active">
           <div className="item-info-header">
@@ -441,7 +460,9 @@ const InspectTool: React.FC<InspectToolProps> = ({
                 <span className="detail-value">"{itemData.customname}"</span>
               </div>
             )}
-          </div>          {itemData.stickers && itemData.stickers.length > 0 && (
+          </div>
+          {/* Stickers section */}
+          {itemData.stickers && itemData.stickers.length > 0 && (
             <div className="stickers-container">
               <h3>Applied Stickers</h3>
               <div className="stickers-grid">
@@ -466,7 +487,9 @@ const InspectTool: React.FC<InspectToolProps> = ({
                   </div>                ))}
               </div>
             </div>
-          )}          {itemData.keychains && itemData.keychains.length > 0 && (
+          )}
+          {/* Keychains section */}
+          {itemData.keychains && itemData.keychains.length > 0 && (
             <div className="keychains-container">
               <h3>Attached Keychains</h3>
               <div className="keychains-grid">
@@ -492,7 +515,7 @@ const InspectTool: React.FC<InspectToolProps> = ({
         </div>
       )}
 
-      {/* Background Selector Modal rendered in a React Portal for true viewport overlay */}
+      {/* Background Selector Modal */}
       {showBackgroundSelector && ReactDOM.createPortal(
         <div className="background-selector-modal" style={{zIndex: 2000}}>
           <div className="modal-content" style={{maxWidth: 400, width: '95vw', padding: 0}}>
