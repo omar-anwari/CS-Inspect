@@ -136,10 +136,9 @@
     -8px 0 40px rgba(0, 0, 0, 0.6),
     inset 1px 0 0 rgba(255, 255, 255, 0.08); /* Enhanced shadow with inner highlight */
   display: flex;
-  flex-direction: column;
-  padding: 0; /* Remove padding, handle individually */
-  transition: transform var(--transition-panel), opacity var(--transition-panel);
-  transform: translateX(100%);
+  flex-direction: column;  padding: 0; /* Remove padding, handle individually */
+  transition: transform var(--transition-panel), opacity var(--transition-panel), visibility var(--transition-panel);
+  transform: translateX(100%) scale(0.95);
   opacity: 0;
   visibility: hidden;
   border-radius: 16px 0 0 16px; /* Rounded left corners */
@@ -187,7 +186,7 @@
 }
 
 .item-info-panel.active {
-  transform: translateX(0);
+  transform: translateX(0) scale(1);
   opacity: 1;
   visibility: visible;
 }
@@ -207,9 +206,8 @@
     padding-top: var(--space-md);
     padding-left: max(var(--space-md), env(safe-area-inset-left));
     padding-right: max(var(--space-md), env(safe-area-inset-right));
-    padding-bottom: max(var(--space-md), env(safe-area-inset-bottom));
-    box-shadow: 0 -2px 16px rgba(0,0,0,0.2);
-    transform: translateY(100%);
+    padding-bottom: max(var(--space-md), env(safe-area-inset-bottom));    box-shadow: 0 -2px 16px rgba(0,0,0,0.2);
+    transform: translateY(100%) scale(0.95);
     box-sizing: border-box; /* Ensure padding doesn't add to width */
   }
   
@@ -274,14 +272,13 @@
     padding-top: var(--space-sm);
     padding-left: max(var(--space-sm), env(safe-area-inset-left));
     padding-right: max(var(--space-sm), env(safe-area-inset-right));
-    padding-bottom: max(var(--space-sm), env(safe-area-inset-bottom));
-    box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
-    transform: translateY(100%);
+    padding-bottom: max(var(--space-sm), env(safe-area-inset-bottom));    box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+    transform: translateY(100%) scale(0.95);
     box-sizing: border-box; /* Ensure padding doesn't add to width */
   }
   
   .item-info-panel.active {
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
     .item-info-header {
     margin-bottom: var(--space-sm);

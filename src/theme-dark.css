@@ -56,7 +56,7 @@
   --transition-fast: 0.15s ease;
   --transition-base: 0.25s ease;
   --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-panel: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-panel: 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --transition-bounce: 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
   
   /* Box shadows */
