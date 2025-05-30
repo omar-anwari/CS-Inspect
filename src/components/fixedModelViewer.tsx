@@ -1,6 +1,3 @@
-// This is a simplified version of the ModernModelViewer with type issues fixed
-// Import this instead of ModernModelViewer.tsx in your application
-
 import React, { useEffect, useState, useRef, Component, ErrorInfo, ReactNode, forwardRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { 
