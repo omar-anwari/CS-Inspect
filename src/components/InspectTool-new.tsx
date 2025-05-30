@@ -224,11 +224,11 @@ const InspectTool: React.FC<InspectToolProps> = ({
               {itemData.stickers.map((sticker) => (
                 <div key={`sticker-${sticker.slot}`} className="sticker-item">
                   <img 
-                    src={sticker.imageurl} 
+                    src={sticker.imageurl || 'https://placehold.co/400'} 
                     alt={sticker.name} 
                     className="sticker-image"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://placehold.co/64?text=No+Image';
+                      (e.target as HTMLImageElement).src = 'https://placehold.co/400';
                     }}
                   />
                   <span className="sticker-name">{sticker.name}</span>

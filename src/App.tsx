@@ -246,9 +246,9 @@ const App: React.FC = () => {
                 onClick={() => setSelectedIndex(index)}
               >
                 <img
-                  src={item.imageurl}
+                  src={item.imageurl || 'https://placehold.co/400'}
                   alt={item.full_item_name}
-                  onError={e => { e.currentTarget.src = 'https://placehold.co/48x36?text=No+Image'; }}
+                  onError={e => { e.currentTarget.src = 'https://placehold.co/400'; }}
                 />
                 <div className="skin-name">{item.full_item_name}</div>
               </div>
@@ -326,11 +326,11 @@ const App: React.FC = () => {
             {fetchedItems[selectedIndex].stickers.map((sticker, index) => (
               <div key={index} className="sticker-item">
                 <img
-                  src={sticker.imageurl}
+                  src={sticker.imageurl || 'https://placehold.co/400'}
                   alt={sticker.name}
                   className="sticker-image"
                   onError={(e) => {
-                    e.currentTarget.src = 'https://placehold.co/64?text=No+Image';
+                    e.currentTarget.src = 'https://placehold.co/400';
                   }}
                 />
                 <span className="sticker-name">{sticker.name}</span>

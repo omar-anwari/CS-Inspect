@@ -22,6 +22,7 @@ interface Keychain {
   sticker_id: number;
   pattern: number;
   name: string;
+  imageurl?: string; // Add optional image URL
 }
 
 interface ItemInfo {
@@ -440,15 +441,19 @@ const InspectTool: React.FC<InspectToolProps> = ({
                 <span className="detail-value">"{itemData.customname}"</span>
               </div>
             )}
-          </div>
-
-          {itemData.stickers && itemData.stickers.length > 0 && (
+          </div>          {itemData.stickers && itemData.stickers.length > 0 && (
             <div className="stickers-container">
               <h3>Applied Stickers</h3>
               <div className="stickers-grid">
                 {itemData.stickers.map((sticker) => (
                   <div key={`sticker-${sticker.slot}`} className="sticker-item">
-                    <img src={sticker.imageurl} alt={sticker.name} />
+                    <img 
+                      src={sticker.imageurl || 'https://placehold.co/400'} 
+                      alt={sticker.name}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://placehold.co/400';
+                      }}
+                    />
                     <span>{sticker.name}</span>
                     {sticker.wear !== undefined && (
                       <span className="sticker-wear">
@@ -461,17 +466,27 @@ const InspectTool: React.FC<InspectToolProps> = ({
                   </div>                ))}
               </div>
             </div>
-          )}
-
-          {itemData.keychains && itemData.keychains.length > 0 && (
+          )}          {itemData.keychains && itemData.keychains.length > 0 && (
             <div className="keychains-container">
               <h3>Attached Keychains</h3>
-              {itemData.keychains.map((keychain) => (
-                <div key={`keychain-${keychain.slot}`} className="keychain-item">
-                  <div className="keychain-name">{keychain.name}</div>
-                  <div className="keychain-pattern">Pattern: {keychain.pattern}</div>
-                </div>
-              ))}
+              <div className="keychains-grid">
+                {itemData.keychains.map((keychain) => (
+                  <div key={`keychain-${keychain.slot}`} className="keychain-item">
+                    <img 
+                      src={keychain.imageurl || 'https://placehold.co/400'} 
+                      alt={keychain.name} 
+                      className="keychain-image"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://placehold.co/400';
+                      }}
+                    />
+                    <div className="keychain-content">
+                      <span className="keychain-name">{keychain.name}</span>
+                      <div className="keychain-pattern">Pattern: {keychain.pattern}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

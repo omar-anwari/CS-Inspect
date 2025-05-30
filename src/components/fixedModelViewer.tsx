@@ -1,27 +1,15 @@
 // This is a simplified version of the ModernModelViewer with type issues fixed
 // Import this instead of ModernModelViewer.tsx in your application
 
-import React, { Suspense, useEffect, useState, useRef, Component, ErrorInfo, ReactNode, forwardRef, useImperativeHandle } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import React, { useEffect, useState, useRef, Component, ErrorInfo, ReactNode, forwardRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { 
-  OrbitControls,
-  useGLTF,
-  Environment,
-  Stats,
-  Box
-} from '@react-three/drei';
+  useGLTF} from '@react-three/drei';
 import { 
-  getBaseWeaponName,
-  resolveModelPath 
-} from '../utils/modelPathResolver';
+  getBaseWeaponName} from '../utils/modelPathResolver';
 import {
-  isLegacyModel,
-  getSkinInfo,
-  debugPaintKit,
-  validateProblemSkins
-} from '../utils/itemsGameParser';
+  getSkinInfo} from '../utils/itemsGameParser';
 import { parseVMAT, VMATData } from '../vmatParser';
-import { loadTextureWithFallbacks } from './improvedTextureLoader';
 import * as THREE from 'three';
 
 // Custom error boundary component

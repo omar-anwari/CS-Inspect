@@ -676,14 +676,42 @@
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
 }
 
+.keychains-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-lg);
+}
+
+/* Mobile styles for keychains grid */
+@media (max-width: 480px) {
+  .keychains-grid {
+    grid-template-columns: repeat(2, 1fr); /* Keep 2 columns but make them smaller */
+    gap: var(--space-md);
+  }
+  
+  .keychain-item .keychain-image {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+@media (max-width: 360px) {
+  .keychains-grid {
+    grid-template-columns: 1fr; /* Single column on very small screens */
+  }
+}
+
 .keychain-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   padding: var(--space-lg);
-  margin-bottom: var(--space-md);
+  border-radius: 12px;
   background: linear-gradient(135deg, 
     rgba(30, 41, 59, 0.6) 0%, 
     rgba(17, 24, 39, 0.8) 100%
   );
-  border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.15);
   transition: all var(--transition-base);
   position: relative;
@@ -707,11 +735,11 @@
 }
 
 .keychain-item:hover {
-  border-color: rgba(148, 163, 184, 0.3);
+  transform: translateY(-4px);
   box-shadow: 
     0 8px 25px rgba(0, 0, 0, 0.3),
     0 0 0 1px rgba(148, 163, 184, 0.2);
-  transform: translateY(-2px);
+  border-color: rgba(148, 163, 184, 0.3);
   background: linear-gradient(135deg, 
     rgba(30, 41, 59, 0.8) 0%, 
     rgba(17, 24, 39, 0.9) 100%
@@ -722,14 +750,35 @@
   opacity: 1;
 }
 
-.keychain-item:last-child {
-  margin-bottom: 0;
+.keychain-image {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  margin-bottom: var(--space-md);
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+  border-radius: 8px;
+  transition: transform var(--transition-base);
+}
+
+.keychain-item:hover .keychain-image {
+  transform: scale(1.05);
+}
+
+.keychain-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
 }
 
 .keychain-name {
-  font-weight: 700;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
   color: var(--color-text-primary);
-  font-size: var(--font-size-md);
+  font-weight: 600;
   margin-bottom: var(--space-sm);
   background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
   -webkit-background-clip: text;
@@ -739,13 +788,11 @@
 
 .keychain-pattern {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-size: var(--font-size-xs);
   padding: var(--space-xs) var(--space-sm);
   background: rgba(0, 0, 0, 0.2);
   border-radius: 6px;
   border: 1px solid rgba(148, 163, 184, 0.1);
-  display: inline-block;
 }
 
 .background-selector {
@@ -1608,9 +1655,9 @@ body.hide-ui .inspect-link-input {
 
 /* Better quality bar */
 .quality-bar {
-  height: 8px;
+  height: 5px;
   background: linear-gradient(90deg, 
-    #57cbde 0% 7%,   /* Factory New - Blue (abrupt transition) */
+    #57cbde 0% 7%,   /* Factory New - Blue */
     #90ba3c 7% 15%,  /* Minimal Wear - Green */
     #ffd700 15% 38%,  /* Field-Tested - Yellow */
     #cf6a32 38% 45%,  /* Well-Worn - Orange */
