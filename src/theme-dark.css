@@ -80,6 +80,11 @@
     --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
     --safe-area-inset-left: env(safe-area-inset-left, 0px);
   }
+
+  /* Header dimensions for proper spacing */
+  --header-height-desktop: 80px;
+  --header-height-tablet: 70px;
+  --header-height-mobile: 60px;
 }
 
 /* Base styles */
@@ -377,18 +382,14 @@ p {
   position: relative;
 }
 
-.quality-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #32D583 0%, #FDB022 50%, #F04438 100%);
-  border-radius: 3px;
-}
-
-.quality-marker {
+.float-indicator {
   position: absolute;
-  width: 3px;
-  height: 10px;
-  background-color: white;
-  top: 0px;
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  border-radius: 2px;
+  top: -2px;
   transform: translateX(-50%);
 }
 

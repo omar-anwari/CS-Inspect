@@ -38,6 +38,14 @@ interface ItemInfo {
   keychains: Keychain[];
 }
 
+interface HistoryItem {
+  link: string;
+  name: string;
+  wear_name: string;
+  floatvalue: number;
+  timestamp: number;
+}
+
 interface InspectToolProps {
   inspectLink?: string;
   onError?: (error: string) => void;
@@ -56,12 +64,10 @@ const InspectTool: React.FC<InspectToolProps> = ({
   const screenshotRef = useRef<HTMLDivElement>(null);
   const [itemData, setItemData] = useState<ItemInfo | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [backgroundColor, setBackgroundColor] = useState<string>('transparent');
-  const [currentInspectLink, setCurrentInspectLink] = useState<string | undefined>(inspectLink);
-  const [inspectHistory, setInspectHistory] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);  const [backgroundColor, setBackgroundColor] = useState<string>('transparent');  const [currentInspectLink, setCurrentInspectLink] = useState<string | undefined>(inspectLink);
+  const [inspectHistory, setInspectHistory] = useState<HistoryItem[]>([]);
   const [showDetails, setShowDetails] = useState<boolean>(true);
-  const [isAutoRotate, setIsAutoRotate] = useState<boolean>(false);
+  const [isAutoRotate, setIsAutoRotate] = useState<boolean>(true);
   const [isTakingScreenshot, setIsTakingScreenshot] = useState<boolean>(false);
   const [showBackgroundSelector, setShowBackgroundSelector] = useState(false);
   const [pendingBackground, setPendingBackground] = useState<string | null>(null);
@@ -75,23 +81,34 @@ const InspectTool: React.FC<InspectToolProps> = ({
     { label: 'Purple', value: 'url(/backgrounds/bg1_4.png)', preview: '/backgrounds/bg1_4.png' },
     { label: 'Blue', value: 'url(/backgrounds/bg1_5.png)', preview: '/backgrounds/bg1_5.png' },
   ];
-
   // Handle inspect link submission from the new top input component
   const handleInspectLinkSubmit = (link: string) => {
-    if (link && !inspectHistory.includes(link)) {
-      setInspectHistory(prev => [...prev.filter(item => item !== link), link].slice(-10));
-    }
     setCurrentInspectLink(link);
     if (onInspectSubmit) {
       onInspectSubmit(link);
     }
   };
 
+  // Add item to history when itemData is successfully loaded
+  const addToHistory = (link: string, itemData: ItemInfo) => {
+    const existingIndex = inspectHistory.findIndex(item => item.link === link);
+    if (existingIndex === -1) {
+      const newHistoryItem: HistoryItem = {
+        link,
+        name: itemData.full_item_name,
+        wear_name: itemData.wear_name,
+        floatvalue: itemData.floatvalue,
+        timestamp: Date.now()
+      };
+      setInspectHistory(prev => [...prev.filter(item => item.link !== link), newHistoryItem].slice(-10));
+    }
+  };
+
   // Handle selecting an item from history
-  const handleHistorySelect = (link: string) => {
-    setCurrentInspectLink(link);
+  const handleHistorySelect = (historyItem: HistoryItem) => {
+    setCurrentInspectLink(historyItem.link);
     if (onInspectSubmit) {
-      onInspectSubmit(link);
+      onInspectSubmit(historyItem.link);
     }
   };
 
@@ -168,10 +185,13 @@ const InspectTool: React.FC<InspectToolProps> = ({
 
         if (!data.iteminfo) {
           throw new Error('Invalid response format: missing iteminfo');
-        }
-
-        // Update state with the fetched item data
+        }        // Update state with the fetched item data
         setItemData(data.iteminfo);
+
+        // Add to history if we have a current inspect link
+        if (currentInspectLink) {
+          addToHistory(currentInspectLink, data.iteminfo);
+        }
 
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -343,20 +363,22 @@ const InspectTool: React.FC<InspectToolProps> = ({
             </div>
           </>
         )}
-      </div>
-
-      {/* History panel */}
+      </div>      {/* History panel */}
       {inspectHistory.length > 0 && (
         <div className="history-panel">
           <h3>Recent Items</h3>
           <ul className="history-list">
-            {inspectHistory.slice().reverse().map((link, index) => (
-              <li key={`history-${index}`}>
+            {inspectHistory.slice().reverse().map((historyItem, index) => (
+              <li key={`history-${historyItem.timestamp}`}>
                 <button
-                  onClick={() => handleHistorySelect(link)}
-                  className={currentInspectLink === link ? 'active' : ''}
+                  onClick={() => handleHistorySelect(historyItem)}
+                  className={currentInspectLink === historyItem.link ? 'active' : ''}
                 >
-                  Weapon #{inspectHistory.length - index}
+                  <div className="history-item-name">{historyItem.name}</div>
+                  <div className="history-item-details">
+                    <span className="history-item-wear">{historyItem.wear_name}</span>
+                    <span className="history-item-float">{historyItem.floatvalue.toFixed(4)}</span>
+                  </div>
                 </button>
               </li>
             ))}
@@ -378,33 +400,82 @@ const InspectTool: React.FC<InspectToolProps> = ({
               </svg>
             </button>
             <div className="item-full-name">{itemData.full_item_name}</div>
-            <div className="item-float-value">{itemData.floatvalue.toFixed(8)}</div>
-
-            <div className="wear-section">
+            <div className="item-float-value">{itemData.floatvalue.toFixed(8)}</div>            <div className="wear-section">
               <div className="wear-label">Wear Rating:</div>
               <div className="wear-value">{itemData.wear_name}</div>
             </div>
 
             {/* Wear/float bar with indicator */}
             <div className="quality-bar" style={{ position: 'relative' }}>
-              <div className="quality-fill" style={{ width: `${Math.min(itemData.floatvalue * 100, 100)}%` }}></div>
-              {/* Indicator marker */}
+              {/* Float position indicator */}
               <div
-                className="quality-marker"
+                className="float-indicator"
                 style={{
-                  left: `calc(${Math.min(itemData.floatvalue * 100, 100)}%)`,
-                  position: 'absolute',
-                  top: 0,
-                  height: '100%',
-                  width: '3px',
-                  background: 'white',
-                  borderRadius: '2px',
-                  transform: 'translateX(-50%)',
-                  boxShadow: '0 0 4px 1px rgba(0,0,0,0.25)'
+                  left: `${Math.min(itemData.floatvalue * 100, 100)}%`,
                 }}
-              />
+              ></div>
             </div>
           </div>
+
+          <div className="item-details clean-list">
+            <div className="detail-row">
+              <span className="detail-label">Pattern Index:</span>
+              <span className="detail-value">{itemData.paintseed}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Quality:</span>
+              <span className="detail-value">{itemData.quality_name}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Rarity:</span>
+              <span className="detail-value">{itemData.rarity_name}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Pattern ID:</span>
+              <span className="detail-value">{itemData.paintseed}</span>
+            </div>
+            {itemData.customname && (
+              <div className="detail-row">
+                <span className="detail-label">Name Tag:</span>
+                <span className="detail-value">"{itemData.customname}"</span>
+              </div>
+            )}
+          </div>
+
+          {itemData.stickers && itemData.stickers.length > 0 && (
+            <div className="stickers-container">
+              <h3>Applied Stickers</h3>
+              <div className="stickers-grid">
+                {itemData.stickers.map((sticker) => (
+                  <div key={`sticker-${sticker.slot}`} className="sticker-item">
+                    <img src={sticker.imageurl} alt={sticker.name} />
+                    <span>{sticker.name}</span>
+                    {sticker.wear !== undefined && (
+                      <span className="sticker-wear">
+                        <div className="wear-indicator">
+                          <div className="wear-bar" style={{ width: `${sticker.wear * 100}%` }}></div>
+                        </div>
+                        {(sticker.wear * 100).toFixed(1)}% worn
+                      </span>
+                    )}
+                  </div>                ))}
+              </div>
+            </div>
+          )}
+
+          {itemData.keychains && itemData.keychains.length > 0 && (
+            <div className="keychains-container">
+              <h3>Attached Keychains</h3>
+              {itemData.keychains.map((keychain) => (
+                <div key={`keychain-${keychain.slot}`} className="keychain-item">
+                  <div className="keychain-name">{keychain.name}</div>
+                  <div className="keychain-pattern">Pattern: {keychain.pattern}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Background Selector Modal rendered in a React Portal for true viewport overlay */}
       {showBackgroundSelector && ReactDOM.createPortal(
@@ -457,55 +528,6 @@ const InspectTool: React.FC<InspectToolProps> = ({
           </div>
         </div>,
         document.body
-      )}
-
-          <div className="item-details clean-list">
-            <div className="detail-row">
-              <span className="detail-label">Pattern Index:</span>
-              <span className="detail-value">{itemData.paintseed}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Quality:</span>
-              <span className="detail-value">{itemData.quality_name}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Rarity:</span>
-              <span className="detail-value">{itemData.rarity_name}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Pattern ID:</span>
-              <span className="detail-value">{itemData.paintseed}</span>
-            </div>
-            {itemData.customname && (
-              <div className="detail-row">
-                <span className="detail-label">Name Tag:</span>
-                <span className="detail-value">"{itemData.customname}"</span>
-              </div>
-            )}
-          </div>
-
-          {itemData.stickers && itemData.stickers.length > 0 && (
-            <div className="stickers-container">
-              <h3>Applied Stickers</h3>
-              <div className="stickers-grid">
-                {itemData.stickers.map((sticker) => (
-                  <div key={`sticker-${sticker.slot}`} className="sticker-item">
-                    <img src={sticker.imageurl} alt={sticker.name} />
-                    <span>{sticker.name}</span>
-                    {sticker.wear !== undefined && (
-                      <span className="sticker-wear">
-                        <div className="wear-indicator">
-                          <div className="wear-bar" style={{ width: `${sticker.wear * 100}%` }}></div>
-                        </div>
-                        {(sticker.wear * 100).toFixed(1)}% worn
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
       )}
     </div>
   );
