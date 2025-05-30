@@ -22,7 +22,7 @@ export interface VMATData {
 	grungePath?: string;
 	glitterNormalPath?: string;
 	glitterMaskPath?: string;
-	
+
 	// Texture settings
 	flipY?: boolean;
 	wrapS?: THREE.Wrapping; // Horizontal wrapping mode
@@ -83,7 +83,7 @@ export function normalizeTexturePath(
 
 	// Replace backslashes with forward slashes (for Windows paths)
 	normalized = normalized.replace(/\\/g, '/');
-	
+
 	// Handle .vtex files and convert to the appropriate image format
 	// Always prefer PNG format over TGA when possible
 	normalized = normalized
@@ -94,12 +94,17 @@ export function normalizeTexturePath(
 		.replace(/_jpg_[0-9a-f]+\.vtex$/, '.png') // Convert JPG to PNG
 		.replace(/_jpeg_[0-9a-f]+\.vtex$/, '.png') // Convert JPEG to PNG
 		.replace(/_[0-9a-f]+\.vtex$/, '.png');
-	
-   // Try to ensure _PreviewMaterials is in the path for our file structure
-   // Always prepend the relative path for any 'materials/'-relative path
-   if (!normalized.includes('_PreviewMaterials') && normalized.startsWith('/materials/')) {
-	   normalized = '/public/materials/_PreviewMaterials/materials/' + normalized.substring('/materials/'.length);
-   }
+
+	// Try to ensure _PreviewMaterials is in the path for our file structure
+	// Always prepend the relative path for any 'materials/'-relative path
+	if (
+		!normalized.includes('_PreviewMaterials') &&
+		normalized.startsWith('/materials/')
+	) {
+		normalized =
+			'/public/materials/_PreviewMaterials/materials/' +
+			normalized.substring('/materials/'.length);
+	}
 
 	console.log('[VMAT] Normalized path:', normalized);
 	return normalized;
@@ -168,14 +173,14 @@ export async function parseVMAT(filePath: string): Promise<VMATData> {
 			let match;
 			while ((match = textureRegex.exec(textureSection)) !== null) {
 				const key = match[1];
-				let value = match[2];			// Normalize VTEX paths to PNG (prefer PNG over TGA/JPG)
-			value = value
-				.replace(/_psd_[0-9a-f]+\.vtex$/, '.png')
-				.replace(/_tga_[0-9a-f]+\.vtex$/, '.png') // Convert TGA to PNG
-				.replace(/_png_[0-9a-f]+\.vtex$/, '.png')
-				.replace(/_jpg_[0-9a-f]+\.vtex$/, '.png') // Convert JPG to PNG
-				.replace(/_jpeg_[0-9a-f]+\.vtex$/, '.png') // Convert JPEG to PNG
-				.replace(/_[0-9a-f]+\.vtex$/, '.png');
+				let value = match[2]; // Normalize VTEX paths to PNG (prefer PNG over TGA/JPG)
+				value = value
+					.replace(/_psd_[0-9a-f]+\.vtex$/, '.png')
+					.replace(/_tga_[0-9a-f]+\.vtex$/, '.png') // Convert TGA to PNG
+					.replace(/_png_[0-9a-f]+\.vtex$/, '.png')
+					.replace(/_jpg_[0-9a-f]+\.vtex$/, '.png') // Convert JPG to PNG
+					.replace(/_jpeg_[0-9a-f]+\.vtex$/, '.png') // Convert JPEG to PNG
+					.replace(/_[0-9a-f]+\.vtex$/, '.png');
 
 				compiledTextures[key] = value;
 				console.log(`[VMAT] Compiled texture: ${key} = ${value}`);
@@ -286,7 +291,7 @@ export async function parseVMAT(filePath: string): Promise<VMATData> {
 					rawTextures.GlitterMask ||
 					rawTextures.TextureGlitterMask
 			),
-			
+
 			// Add texture settings
 			flipY: true, // Default for most Three.js textures
 
@@ -358,3 +363,73 @@ export function createDefaultVMATData(materialPath: string): VMATData {
 		},
 	};
 }
+
+export const parseVCOMPMAT = (vcompmatContent: string): VMATData => {
+	console.log('Parsing VCOMPMAT file...');
+
+	const result: VMATData = {
+		colorPath: '',
+		patternTexturePath: '',
+		normalMapPath: '',
+		roughnessPath: '',
+		metalnessPath: '',
+		aoPath: '',
+		maskPath: '',
+		wearPath: '',
+		parameters: {},
+	};
+
+	try {
+		// VCOMPMAT files are binary but may contain readable texture paths
+		// Look for common texture patterns in the content
+		const lines = vcompmatContent.split('\n');
+
+		for (const line of lines) {
+			const cleanLine = line.trim().toLowerCase();
+
+			// Look for texture paths - these usually end with .vtex_c
+			if (cleanLine.includes('.vtex_c') || cleanLine.includes('materials/')) {
+				// Extract the path from the line
+				const pathMatch = line.match(/materials\/[^"\s]+\.vtex_c/i);
+				if (pathMatch) {
+					const texturePath = pathMatch[0];
+
+					// Convert .vtex_c to .png for web usage
+					const webPath = texturePath
+						.replace('.vtex_c', '.png')
+						.replace(/\\/g, '/');
+
+					// Determine texture type based on naming conventions
+					if (webPath.includes('_color') || webPath.includes('_c.')) {
+						result.colorPath = `/${webPath}`;
+					} else if (webPath.includes('_normal') || webPath.includes('_n.')) {
+						result.normalMapPath = `/${webPath}`;
+					} else if (webPath.includes('_rough') || webPath.includes('_r.')) {
+						result.roughnessPath = `/${webPath}`;
+					} else if (webPath.includes('_metal') || webPath.includes('_m.')) {
+						result.metalnessPath = `/${webPath}`;
+					} else if (webPath.includes('_ao')) {
+						result.aoPath = `/${webPath}`;
+					} else if (webPath.includes('_mask') || webPath.includes('_alpha')) {
+						result.maskPath = `/${webPath}`;
+					} else if (webPath.includes('_wear')) {
+						result.wearPath = `/${webPath}`;
+					} else {
+						// Default to color/pattern texture if type can't be determined
+						if (!result.colorPath) {
+							result.colorPath = `/${webPath}`;
+						} else if (!result.patternTexturePath) {
+							result.patternTexturePath = `/${webPath}`;
+						}
+					}
+				}
+			}
+		}
+
+		console.log('Parsed VCOMPMAT texture paths:', result);
+		return result;
+	} catch (error) {
+		console.error('Error parsing VCOMPMAT file:', error);
+		return result;
+	}
+};

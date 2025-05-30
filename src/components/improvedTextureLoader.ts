@@ -531,17 +531,22 @@ export const applyCSGOTextureMapping = (
   texture.offset.set(0, 0);  // Start with no offset
   
   // Calculate repeat values based on UV bounds if available
-  let repeatX = 6; // Default higher repeat for CS:GO patterns
-  let repeatY = 6;
+  // Use more conservative default scaling - CS:GO skins usually work best with 1:1 or 2:2 scaling
+  let repeatX = 1; // Much more conservative default
+  let repeatY = 1;
+  
+  // For certain patterns that need tiling, use moderate scaling
+  if (materialPattern.includes('digital') || materialPattern.includes('camo') || 
+      materialPattern.includes('splatter') || materialPattern.includes('grid')) {
+    repeatX = 2;
+    repeatY = 2;
+  }
   
   if (uvBounds) {
     const calculated = calculateTextureRepeat(uvBounds);
-    repeatX = Math.max(4, calculated.repeatX); // Minimum 4x repeat for CS:GO skins
-    repeatY = Math.max(4, calculated.repeatY);
-    
-    // Cap at reasonable maximum for performance
-    repeatX = Math.min(repeatX, 24);
-    repeatY = Math.min(repeatY, 24);
+    // Use more conservative minimums - most CS:GO skins work well with 1:1 to 2:2 scaling
+    repeatX = Math.max(1, Math.min(2, calculated.repeatX));
+    repeatY = Math.max(1, Math.min(2, calculated.repeatY));
   }
   
   // Apply the calculated repeat values
@@ -596,6 +601,7 @@ export interface TextureMetadata {
   materialPattern?: string;
   likelyFolder?: string;
   uvBounds?: UVBounds;
+  isLegacyModel?: boolean;
 }
 
 /**
