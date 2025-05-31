@@ -404,23 +404,35 @@ const ModernModelViewer: React.FC<ModernModelViewerProps> = ({
 
           // Use pattern map or color map as main texture
 
-          const finalPatternMap = patternMap || colorMap;
+          // Utility to check if a texture is valid (not null, not broken)
+          function isValidTexture(tex: THREE.Texture | null | undefined): tex is THREE.Texture {
+            return !!(tex && tex.image && tex.image.width > 0 && tex.image.height > 0);
+          }
+
+          // If the texture is present but invalid, treat as missing
+          let finalPatternMap: THREE.Texture | null = null;
+          if (isValidTexture(patternMap)) {
+            finalPatternMap = patternMap;
+          } else if (isValidTexture(colorMap)) {
+            finalPatternMap = colorMap;
+          } else {
+            finalPatternMap = null;
+          }
 
           // Log all texture URLs and their load status
           console.log('🔄 Texture loading complete, summary:');
-          console.log(`  Color map: ${colorMap ? '✅' : '❌'} (${vmatData.colorPath})`);
-          console.log(`  Pattern map: ${patternMap ? '✅' : '❌'} (${vmatData.patternTexturePath})`);
-          console.log(`  Normal map: ${normalMap ? '✅' : '❌'} (${vmatData.normalMapPath})`);
-          console.log(`  Roughness map: ${roughnessMap ? '✅' : '❌'} (${vmatData.roughnessPath})`);
-          console.log(`  Metalness map: ${metalnessMap ? '✅' : '❌'} (${vmatData.metalnessPath})`);
-          console.log(`  AO map: ${aoMap ? '✅' : '❌'} (${vmatData.aoPath})`);
-          console.log(`  Wear map: ${wearMap ? '✅' : '❌'} (${vmatData.wearPath})`);
-          console.log(`  Mask map: ${maskMap ? '✅' : '❌'} (${vmatData.maskPath})`);
+          console.log(`  Color map: ${isValidTexture(colorMap) ? '✅' : '❌'} (${vmatData.colorPath})`);
+          console.log(`  Pattern map: ${isValidTexture(patternMap) ? '✅' : '❌'} (${vmatData.patternTexturePath})`);
+          console.log(`  Normal map: ${isValidTexture(normalMap) ? '✅' : '❌'} (${vmatData.normalMapPath})`);
+          console.log(`  Roughness map: ${isValidTexture(roughnessMap) ? '✅' : '❌'} (${vmatData.roughnessPath})`);
+          console.log(`  Metalness map: ${isValidTexture(metalnessMap) ? '✅' : '❌'} (${vmatData.metalnessPath})`);
+          console.log(`  AO map: ${isValidTexture(aoMap) ? '✅' : '❌'} (${vmatData.aoPath})`);
+          console.log(`  Wear map: ${isValidTexture(wearMap) ? '✅' : '❌'} (${vmatData.wearPath})`);
+          console.log(`  Mask map: ${isValidTexture(maskMap) ? '✅' : '❌'} (${vmatData.maskPath})`);
 
           // If the main pattern texture fails, log a warning but don't prevent model display
           if (!finalPatternMap) {
-            console.warn('⚠️ No main pattern or color texture loaded! Will show model without textures.');
-            // Don't return early - allow model to show with default materials
+            console.warn('⚠️ No valid main pattern or color texture loaded! Will show model with fallback color-only material.');
           }
 
           // Extract colors from VMAT data
@@ -461,22 +473,24 @@ const ModernModelViewer: React.FC<ModernModelViewerProps> = ({
               // Always ensure mesh visibility
               if (isPrimaryMaterial) {
                 console.log(`🎨 Processing mesh: ${child.name}`);
-                
-                // Create a basic material if no texture is available
+                // If no valid pattern/color texture, always apply a visible fallback material
                 if (!finalPatternMap) {
-                  const basicMaterial = new THREE.MeshStandardMaterial({
-                    color: mainColor,
+                  const fallbackMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xcccccc,
                     roughness: 0.5,
                     metalness: 0.7
                   });
                   if (Array.isArray(child.material)) {
                     for (let i = 0; i < child.material.length; i++) {
-                      child.material[i] = basicMaterial.clone();
+                      child.material[i] = fallbackMaterial.clone();
+                      child.material[i].needsUpdate = true;
                     }
                   } else {
-                    child.material = basicMaterial;
+                    child.material = fallbackMaterial;
+                    child.material.needsUpdate = true;
                   }
-                  console.log(`⚠️ Applied basic material to ${child.name} due to missing textures`);
+                  child.visible = true;
+                  console.warn(`⚠️ Applied fallback gray material to ${child.name} due to missing or invalid pattern/color texture.`);
                   return;
                 }
                 

@@ -18,6 +18,28 @@ export const applyExtractedTexturesToMesh = async (
   textures: Record<string, string>,
   vmatData: VMATData | null = null
 ) => {
+  // --- DEBUG PATCH: Log mesh/material state after assignment ---
+  const logMeshMaterialState = (label = '') => {
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    console.log(`[DEBUG] Mesh/material state after texture assignment${label ? ' - ' + label : ''}:`, {
+      meshVisible: (mesh as any).visible,
+      meshType: (mesh as any).type,
+      materialVisible: materials.map((m: any) => m.visible),
+      materialOpacity: materials.map((m: any) => m.opacity),
+      materialType: materials.map((m: any) => m.type),
+      materialMap: materials.map((m: any) => m.map),
+      mesh: mesh
+    });
+  };
+
+  // Top-level debug log to confirm function is called
+  console.log('[DEBUG] applyExtractedTexturesToMesh called', { mesh, textures, vmatData });
+  // Log the keys and values of the textures object
+  console.log('[DEBUG] textures object keys:', Object.keys(textures));
+  console.log('[DEBUG] textures object full:', textures);
+
+  // Top-level try/catch to log any errors
+  try {
   // Helper to load and assign a texture
   const assignTexture = async (slot: string, texKey: string) => {
     const texPath = textures[texKey];
@@ -49,20 +71,138 @@ export const applyExtractedTexturesToMesh = async (
     }
   };
 
-  // Standard PBR slots, always try both pattern and color for 'map'
-  await assignTexture('map', 'pattern'); // Albedo/diffuse
-  await assignTexture('map', 'color');   // Color (fallback)
+  // Assign only the first valid pattern or color texture to 'map'
+  let mapAssigned = false;
+  if (textures['pattern']) {
+    console.log('[DEBUG] pattern key found in textures, value:', textures['pattern']);
+    await assignTexture('map', 'pattern');
+    console.log('[DEBUG] assignTexture for pattern complete');
+    mapAssigned = true;
+  } else if (textures['color']) {
+    console.log('[DEBUG] color key found in textures, value:', textures['color']);
+    await assignTexture('map', 'color');
+    console.log('[DEBUG] assignTexture for color complete');
+    mapAssigned = true;
+  } else {
+    console.log('[DEBUG] No pattern or color key found in textures');
+  }
+
+  // PATCH: Defensive material handling and fallback
+  if (mapAssigned) {
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of materials) {
+      if (
+        mat instanceof THREE.MeshStandardMaterial ||
+        mat instanceof THREE.MeshPhysicalMaterial ||
+        mat instanceof THREE.MeshLambertMaterial ||
+        mat instanceof THREE.MeshPhongMaterial
+      ) {
+        if ('map' in mat && mat.map) {
+          mat.visible = true;
+          mat.transparent = false;
+          mat.opacity = 1;
+          if (mat.color && typeof mat.color.set === 'function') {
+            mat.color.set(0xffffff);
+          }
+          mat.needsUpdate = true;
+          console.log('✅ Real pattern/color texture assigned, ensured material is visible and opaque.');
+        }
+      } else {
+        console.warn(
+          `⚠️ Material is not a standard mesh material (type: ${mat.constructor?.name || mat.type}). Skipping property assignment.`
+        );
+      }
+    }
+    logMeshMaterialState('after mapAssigned');
+  } else {
+    // PATCH: If neither pattern nor color was assigned, do NOT assign a fallback, just show the default material
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    let foundStandardMaterial = false;
+    for (let i = 0; i < materials.length; ++i) {
+      const mat = materials[i];
+      if (
+        mat instanceof THREE.MeshStandardMaterial ||
+        mat instanceof THREE.MeshPhysicalMaterial ||
+        mat instanceof THREE.MeshLambertMaterial ||
+        mat instanceof THREE.MeshPhongMaterial
+      ) {
+        foundStandardMaterial = true;
+        if ('map' in mat) {
+          mat.map = null;
+          mat.visible = true;
+          mat.transparent = false;
+          mat.opacity = 1;
+          if (mat.color && typeof mat.color.set === 'function') {
+            mat.color.set(0xffffff);
+          }
+          mat.needsUpdate = true;
+          console.warn('⚠️ No pattern/color texture found, using default material and reset material visibility/opacity.');
+        }
+      } else {
+        console.warn(
+          `⚠️ Material is not a standard mesh material (type: ${mat.constructor?.name || mat.type}). Skipping property assignment.`
+        );
+      }
+    }
+    // If no standard material found, forcibly assign a new MeshStandardMaterial as a last resort
+    if (!foundStandardMaterial && mesh && 'material' in mesh) {
+      console.warn('⚠️ No standard mesh material found. Forcibly assigning new MeshStandardMaterial to ensure visibility.');
+      const newMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+      (mesh as any).material = newMat;
+    }
+    logMeshMaterialState('after no mapAssigned');
+  }
   await assignTexture('normalMap', 'normal');
+  console.log('[DEBUG] assignTexture for normal complete');
   await assignTexture('roughnessMap', 'roughness');
+  console.log('[DEBUG] assignTexture for roughness complete');
   await assignTexture('roughnessMap', 'rough');
+  console.log('[DEBUG] assignTexture for rough complete');
   await assignTexture('metalnessMap', 'metalness');
+  console.log('[DEBUG] assignTexture for metalness complete');
   await assignTexture('metalnessMap', 'metal');
+  console.log('[DEBUG] assignTexture for metal complete');
   await assignTexture('aoMap', 'ao');
+  console.log('[DEBUG] assignTexture for ao complete');
   await assignTexture('alphaMap', 'mask');
+  console.log('[DEBUG] assignTexture for mask complete');
   await assignTexture('emissiveMap', 'emissive');
+  console.log('[DEBUG] assignTexture for emissive complete');
   await assignTexture('bumpMap', 'height');
+  console.log('[DEBUG] assignTexture for height complete');
   await assignTexture('specularMap', 'specular');
+  console.log('[DEBUG] assignTexture for specular complete');
   // Add more slots as needed
+
+  // --- Ensure normal/roughness/metalness/ao maps match main texture settings ---
+  // Find the main material (first material in mesh)
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const mat of materials) {
+    if (
+      (mat instanceof THREE.MeshStandardMaterial ||
+        mat instanceof THREE.MeshPhysicalMaterial ||
+        mat instanceof THREE.MeshPhongMaterial) &&
+      mat.map
+    ) {
+      // Only MeshStandardMaterial, MeshPhysicalMaterial, MeshPhongMaterial have these maps
+      if ('normalMap' in mat && mat.normalMap) {
+        applyConsistentTextureSettings(mat.normalMap, mat.map, 'normalMap');
+      }
+      if ('roughnessMap' in mat && mat.roughnessMap) {
+        applyConsistentTextureSettings(mat.roughnessMap, mat.map, 'roughnessMap');
+      }
+      if ('metalnessMap' in mat && mat.metalnessMap) {
+        applyConsistentTextureSettings(mat.metalnessMap, mat.map, 'metalnessMap');
+      }
+      if ('aoMap' in mat && mat.aoMap) {
+        applyConsistentTextureSettings(mat.aoMap, mat.map, 'aoMap');
+      }
+    }
+  }
+
+  } catch (err) {
+    console.error('[DEBUG] Error in applyExtractedTexturesToMesh:', err);
+  }
 };
 
 /**
@@ -103,49 +243,46 @@ export const extractTexturesFromVCOMPMAT = async (vcompmatPath: string): Promise
     // m_strTextureRuntimeResourcePath = resource_name:"path/to/texture.vtex"
     
     const regex = /m_strName\s*=\s*"(g_t\w+)"[\s\S]*?m_strTextureRuntimeResourcePath\s*=\s*resource_name:"([^"]+)"/g;
-    let match;
-    
-    while ((match = regex.exec(content)) !== null) {
-      const textureName = match[1]; // e.g., g_tPattern, g_tNormal, g_tPaintRoughness, etc.
-      let texturePath = match[2]; // The VTEX path
-      
-      if (!texturePath) {
-        console.warn(`⚠️ Found texture name ${textureName} but path is empty`);
-        continue;
-      }
-      
-      // Convert VTEX to PNG
-      texturePath = convertVTEXPathToPNG(texturePath);
-      
-      // Map texture property names to standard types
-      let textureType: string | null = null;
-      
-      if (textureName.includes('Pattern')) textureType = 'pattern';
-      else if (textureName.includes('Normal')) textureType = 'normal';
-      else if (textureName.includes('Roughness') || textureName.includes('Rough')) textureType = 'roughness';
-      else if (textureName.includes('Metal')) textureType = 'metalness';
-      else if (textureName.includes('Wear')) textureType = 'wear';
-      else if (textureName.includes('Mask') || textureName.includes('Pearlescence')) textureType = 'mask';
-      else if (textureName.includes('AmbientOcclusion') || textureName.includes('AO')) textureType = 'ao';
-      else if (textureName.includes('Grunge')) textureType = 'grunge';
-      else if (textureName.includes('Albedo') || textureName === 'g_tColor') textureType = 'color';
-      else {
-        // If we can't determine the texture type from the name, try to guess from the path
-        if (texturePath.includes('_normal')) textureType = 'normal';
-        else if (texturePath.includes('_rough')) textureType = 'roughness';
-        else if (texturePath.includes('_metal')) textureType = 'metalness';
-        else if (texturePath.includes('_wear')) textureType = 'wear';
-        else if (texturePath.includes('_mask')) textureType = 'mask';
-        else if (texturePath.includes('_ao')) textureType = 'ao';
-        else if (texturePath.includes('_albedo')) textureType = 'pattern';
-        else textureType = 'pattern'; // Default to pattern if we can't determine type
-      }
-      
-      if (textureType) {
-        texturePaths[textureType] = texturePath;
-        console.log(`📝 Found ${textureType} texture: ${texturePath} (from ${textureName})`);
-      }
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    const texName = match[1];
+    const vtexPath = match[2];
+    let texturePath = convertVTEXPathToPNG(vtexPath);
+
+    if (!texturePath) {
+      console.warn(`⚠️ Found texture name ${texName} but path is empty`);
+      continue;
     }
+
+    // Map texture property names to standard types
+    let textureType: string | null = null;
+
+    if (texName.includes('Pattern')) textureType = 'pattern';
+    else if (texName.includes('Normal')) textureType = 'normal';
+    else if (texName.includes('Roughness') || texName.includes('Rough')) textureType = 'roughness';
+    else if (texName.includes('Metal')) textureType = 'metalness';
+    else if (texName.includes('Wear')) textureType = 'wear';
+    else if (texName.includes('Mask') || texName.includes('Pearlescence')) textureType = 'mask';
+    else if (texName.includes('AmbientOcclusion') || texName.includes('AO')) textureType = 'ao';
+    else if (texName.includes('Grunge')) textureType = 'grunge';
+    else if (texName.includes('Albedo') || texName === 'g_tColor') textureType = 'color';
+    else {
+      // If we can't determine the texture type from the name, try to guess from the path
+      if (texturePath.includes('_normal')) textureType = 'normal';
+      else if (texturePath.includes('_rough')) textureType = 'roughness';
+      else if (texturePath.includes('_metal')) textureType = 'metalness';
+      else if (texturePath.includes('_wear')) textureType = 'wear';
+      else if (texturePath.includes('_mask')) textureType = 'mask';
+      else if (texturePath.includes('_ao')) textureType = 'ao';
+      else if (texturePath.includes('_albedo')) textureType = 'pattern';
+      else textureType = 'pattern'; // Default to pattern if we can't determine type
+    }
+
+    if (textureType) {
+      texturePaths[textureType] = texturePath;
+      console.log(`📝 Found ${textureType} texture: ${texturePath} (from ${texName})`);
+    }
+  }
     
     // Enhanced texture search for legacy models
     // Legacy models may have different texture naming conventions
@@ -691,6 +828,47 @@ export const loadTextureWithFallbacks = async (
               resolve(null);
               return;
             }
+            // --- Begin validity check for transparency/black ---
+            try {
+              // Only check for PNGs (skip for TGA/JPG)
+              if (texture.image instanceof HTMLImageElement && /\.png$/i.test(currentPath)) {
+                // Create a canvas to read pixel data
+                const canvas = document.createElement('canvas');
+                canvas.width = texture.image.width;
+                canvas.height = texture.image.height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                console.warn(`⚠️ Could not get 2D context for texture validation: ${currentPath}`);
+                resolve(null);
+                return;
+              }
+              ctx.drawImage(texture.image, 0, 0);
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+              let allTransparent = true;
+              let allBlack = true;
+              for (let i = 0; i < imageData.length; i += 4) {
+                const r = imageData[i];
+                const g = imageData[i + 1];
+                const b = imageData[i + 2];
+                const a = imageData[i + 3];
+                if (a > 16) allTransparent = false;
+                if (r > 8 || g > 8 || b > 8) allBlack = false;
+                if (!allTransparent && !allBlack) break;
+              }
+              if (allTransparent || allBlack) {
+                console.warn(`⚠️ Texture at ${currentPath} is fully transparent or black, treating as invalid.`);
+                resolve(null);
+                return;
+              }
+              }
+            } catch (e) {
+              // If CORS or other error, log and treat as invalid
+              console.warn(`⚠️ Could not validate texture pixels for ${currentPath}:`, e);
+              resolve(null);
+              return;
+            }
+            // --- End validity check ---
+
             // Make the texture a bit brighter by increasing exposure
             // Use colorSpace for modern three.js (SRGBColorSpace)
             if ('colorSpace' in texture && typeof (THREE as any).SRGBColorSpace !== 'undefined') {

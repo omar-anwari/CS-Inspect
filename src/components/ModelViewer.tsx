@@ -306,179 +306,64 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
     };
 
     // Helper function to apply gray material as fallback
+
+    // Helper function to apply gray material as fallback
     const applyGrayMaterial = () => {
       scene.traverse((child: THREE.Object3D) => {
         if (child instanceof THREE.Mesh) {
           child.material = new THREE.MeshStandardMaterial({
             color: new THREE.Color(0x888888),
             roughness: 0.5,
-            metalness: 0.7
+            metalness: 0.7,
+            visible: true,
+            transparent: false,
+            opacity: 1
           });
         }
       });
-    };    // Helper function to apply material data to the scene
+    };
+
+    // Helper function to apply material data to the scene using improvedTextureLoader
     const applyMaterialToScene = async (materialData: VMATData, patternName: string, isLegacy: boolean = false) => {
       console.log("🎨 Applying material data to scene:", materialData);
       console.log(`🔧 Using legacy model textures: ${isLegacy}`);
-
       try {
         // Import the improved texture loader
-        const { loadTextureWithFallbacks, applyCSGOTextureMapping } = await import('./improvedTextureLoader');
+        const { applyExtractedTexturesToMesh } = await import('./improvedTextureLoader');
 
-        // Build texture maps from material data with fallback loading
-        const textureMap: { [key: string]: THREE.Texture | null } = {};        // Load textures using the improved loader with fallbacks
-        if (materialData.colorPath) {
-          console.log(`🔍 Loading color texture: ${materialData.colorPath}`);
-          textureMap.map = await loadTextureWithFallbacks(materialData.colorPath, materialData, {
-            materialPattern: patternName,
-            textureName: 'color',
-            isLegacyModel: isLegacy
-          });
-        }
+        // Build a textures object for applyExtractedTexturesToMesh (must be Record<string, string>)
+        const texturesRaw: Record<string, string | undefined> = {
+          pattern: materialData.patternTexturePath,
+          color: materialData.colorPath,
+          normal: materialData.normalMapPath,
+          roughness: materialData.roughnessPath,
+          metalness: materialData.metalnessPath,
+          ao: materialData.aoPath,
+          mask: materialData.maskPath
+        };
+        // Remove undefined values and cast to Record<string, string>
+        const textures: Record<string, string> = Object.fromEntries(
+          Object.entries(texturesRaw).filter(([_, v]) => typeof v === 'string' && v !== undefined)
+        ) as Record<string, string>;
 
-        if (materialData.patternTexturePath) {
-          console.log(`🔍 Loading pattern texture: ${materialData.patternTexturePath}`);
-          textureMap.map = await loadTextureWithFallbacks(materialData.patternTexturePath, materialData, {
-            materialPattern: patternName,
-            textureName: 'pattern',
-            isLegacyModel: isLegacy
-          });
-        }
+        // Debug: log textures object
+        console.log('[applyMaterialToScene] Textures object:', textures);
 
-        if (materialData.normalMapPath) {
-          console.log(`🔍 Loading normal map: ${materialData.normalMapPath}`);
-          textureMap.normalMap = await loadTextureWithFallbacks(materialData.normalMapPath, materialData, {
-            materialPattern: patternName,
-            textureName: 'normal',
-            isLegacyModel: isLegacy
-          });
-        }
-
-        if (materialData.roughnessPath) {
-          console.log(`🔍 Loading roughness map: ${materialData.roughnessPath}`);
-          textureMap.roughnessMap = await loadTextureWithFallbacks(materialData.roughnessPath, materialData, {
-            materialPattern: patternName,
-            textureName: 'roughness',
-            isLegacyModel: isLegacy
-          });
-        }
-
-        if (materialData.metalnessPath) {
-          console.log(`🔍 Loading metalness map: ${materialData.metalnessPath}`);
-          textureMap.metalnessMap = await loadTextureWithFallbacks(materialData.metalnessPath, materialData, {
-            materialPattern: patternName,
-            textureName: 'metalness',
-            isLegacyModel: isLegacy
-          });
-        }
-
-        if (materialData.aoPath) {
-          console.log(`🔍 Loading AO map: ${materialData.aoPath}`);
-          textureMap.aoMap = await loadTextureWithFallbacks(materialData.aoPath, materialData, {
-            materialPattern: patternName,
-            textureName: 'ao',
-            isLegacyModel: isLegacy
-          });
-        }
-
-        if (materialData.maskPath) {
-          console.log(`🔍 Loading mask/alpha map: ${materialData.maskPath}`);
-          textureMap.alphaMap = await loadTextureWithFallbacks(materialData.maskPath, materialData, {
-            materialPattern: patternName,
-            textureName: 'mask',
-            isLegacyModel: isLegacy
-          });
-        }
-
-        console.log("🎨 Loaded texture maps:", Object.keys(textureMap).filter(key => textureMap[key] !== null));
-
-        // Apply CS:GO specific texture settings to loaded textures
-        Object.entries(textureMap).forEach(([key, texture]) => {
-          if (texture) {
-            // Apply CS:GO texture mapping improvements with more conservative scaling
-            applyCSGOTextureMapping(texture, patternName);            // Override the scaling from applyCSGOTextureMapping if needed
-            // Use conservative repeat values that work well for most CS:GO skins
-            if (key === 'map') {
-              // Main texture (color/pattern) - usually 1:1 scaling works best
-              texture.repeat.set(1, 1);
-            } else if (key === 'normalMap' || key === 'roughnessMap' || key === 'metalnessMap' || key === 'aoMap') {
-              // Detail maps should match the main texture scaling
-              texture.repeat.set(1, 1);
-            } else if (key === 'alphaMap') {
-              // Alpha/mask maps typically use 1:1 scaling
-              texture.repeat.set(1, 1);
-            }
-
-            // CS:GO specific settings
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            texture.flipY = false;
-            texture.center.set(0, 0); // Center at origin
-            texture.offset.set(0, 0); // No offset
-
-            // High quality filtering
-            texture.magFilter = THREE.LinearFilter;
-            texture.minFilter = THREE.LinearMipmapLinearFilter;
-            texture.generateMipmaps = true;
-            texture.anisotropy = Math.min(16, 4);
-
-            texture.needsUpdate = true;
-
-            console.log(`✅ Applied CS:GO texture settings to ${key} with repeat: ${texture.repeat.x}x${texture.repeat.y}`);
-          }
-        });
-
-        // Calculate wear factor from float value
-        const wearFactor = itemData?.floatvalue || 0;
-        const baseRoughness = materialData.parameters?.paintRoughness || 0.5;
-        const adjustedRoughness = Math.min(1.0, baseRoughness + (wearFactor * 0.3));
-
-        // Apply material to all meshes in the scene
+        let meshCount = 0;
         scene.traverse((child: THREE.Object3D) => {
           if (child instanceof THREE.Mesh) {
-            // Create material with loaded textures
-            const material = new THREE.MeshStandardMaterial({
-              // Use white base color to show textures properly
-              color: new THREE.Color(0xffffff),
-
-              // Apply wear-adjusted roughness
-              roughness: adjustedRoughness,
-              metalness: 0.3,
-
-              // Apply loaded texture maps
-              map: textureMap.map,
-              normalMap: textureMap.normalMap,
-              roughnessMap: textureMap.roughnessMap,
-              metalnessMap: textureMap.metalnessMap,
-              aoMap: textureMap.aoMap,
-              alphaMap: textureMap.alphaMap,
-
-              // Enable transparency if we have an alpha map
-              transparent: !!textureMap.alphaMap,
-              alphaTest: textureMap.alphaMap ? 0.1 : 0,
-
-              // Use front side rendering
-              side: THREE.FrontSide
-            });
-
-            // Set needsUpdate after material creation
-            material.needsUpdate = true;
-
-            // Handle multi-material meshes
-            if (Array.isArray(child.material)) {
-              for (let i = 0; i < child.material.length; i++) {
-                child.material[i] = material.clone();
+            meshCount++;
+            (async () => {
+              try {
+                await applyExtractedTexturesToMesh(child, textures, materialData);
+                console.log(`✅ [applyExtractedTexturesToMesh] Applied to mesh: ${child.name}`);
+              } catch (err) {
+                console.error(`❌ Error in applyExtractedTexturesToMesh for mesh ${child.name}:`, err);
               }
-            } else {
-              child.material = material;
-            }
-
-            console.log(`✅ Applied material with textures to mesh: ${child.name}`);
+            })();
           }
         });
-
-        console.log("✅ Successfully applied material to weapon model");
-
+        console.log(`✅ Successfully applied extracted textures to ${meshCount} mesh(es) in weapon model`);
       } catch (error) {
         console.error("❌ Error applying material:", error);
         applyGrayMaterial();
