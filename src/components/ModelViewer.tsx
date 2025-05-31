@@ -540,23 +540,32 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
     <div style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
       <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
         <CameraControlsManager />
-        {/* Softer, more CS2-like ambient light */}
-        <ambientLight intensity={0.18} color={0xbfd4e6} />
-        {/* Main sky/sun directional light, soft and cool */}
+        {/* Enhanced, studio-style lighting setup for even illumination */}
+        <ambientLight intensity={0.8} color={0xffffff} />
+        {/* Hemisphere light for global fill */}
+        <hemisphereLight
+          color={0xffffff}
+          groundColor={0x888888}
+          intensity={0.7}
+          position={[0, 10, 0]}
+        />
+        {/* Key light: strong, from above/front-right */}
         <directionalLight
-          position={[6, 12, 8]}
-          intensity={0.55}
-          color={0xcfe8ff}
+          position={[4, 8, 8]}
+          intensity={0.7}
+          color={0xffffff}
           castShadow
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
         />
-        {/* Subtle fill light from below, very low intensity */}
-        <directionalLight
-          position={[0, -6, 0]}
-          intensity={0.08}
-          color={0x7fa7c7}
-        />
+        {/* Fill lights from multiple angles for even illumination */}
+        <directionalLight position={[-4, 4, -8]} intensity={0.5} color={0xffffff} />
+        <directionalLight position={[0, 6, -10]} intensity={0.3} color={0xbfd4e6} />
+        <directionalLight position={[0, -6, 6]} intensity={0.3} color={0xffffff} />
+        <directionalLight position={[6, -4, 0]} intensity={0.2} color={0xffffff} />
+        <directionalLight position={[-6, -4, 0]} intensity={0.2} color={0xffffff} />
+        {/* Extra point light for subtle fill from the front */}
+        <pointLight position={[0, 0, 5]} intensity={0.2} color={0xffffff} />
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
           <ErrorBoundary fallback={<Box args={[1, 1, 1]} material={new THREE.MeshNormalMaterial()} />}>
             {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} />}
