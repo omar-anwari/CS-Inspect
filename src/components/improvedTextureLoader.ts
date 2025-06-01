@@ -71,20 +71,137 @@ export const applyExtractedTexturesToMesh = async (
     }
   };
 
-  // Assign only the first valid pattern or color texture to 'map'
+
+  // --- SPECIAL CASE: Color slot + mask support (e.g. "Fuschia Is Now") ---
+  let usedCustomColorMaskMaterial = false;
+  // Only use the custom color-mask shader if at least two color slots are different and the mask is not a default/empty mask
+  let shouldUseColorMaskShader = false;
+  if (
+    vmatData &&
+    vmatData.parameters &&
+    Array.isArray(vmatData.parameters.colors) &&
+    vmatData.parameters.colors.length >= 1 &&
+    textures['mask']
+  ) {
+    // Check if at least two color slots are different (ignore alpha)
+    const colorArrs = vmatData.parameters.colors.map(arr => arr.slice(0, 3).join(','));
+    const uniqueColors = Array.from(new Set(colorArrs));
+    // Check for default/empty mask
+    const maskPath = textures['mask'] || '';
+    const isDefaultMask = maskPath.includes('default_mask') || maskPath.includes('default') || maskPath.includes('empty');
+    if (uniqueColors.length > 1 && !isDefaultMask) {
+      shouldUseColorMaskShader = true;
+    }
+  }
+
+  if (shouldUseColorMaskShader) {
+    // Load the mask texture
+    const maskTex = await loadTextureWithFallbacks(textures['mask'], vmatData, { textureName: 'mask' });
+    // Load the pattern or color texture if present (optional)
+    let baseTex: THREE.Texture | null = null;
+    if (textures['pattern']) {
+      baseTex = await loadTextureWithFallbacks(textures['pattern'], vmatData, { textureName: 'pattern' });
+    } else if (textures['color']) {
+      baseTex = await loadTextureWithFallbacks(textures['color'], vmatData, { textureName: 'color' });
+    }
+    // Prepare up to 4 color uniforms and log them, with null/undefined checks
+    const colorUniforms: Record<string, { value: THREE.Color }> = {};
+    const colorsArr = (vmatData && vmatData.parameters && Array.isArray(vmatData.parameters.colors)) ? vmatData.parameters.colors : [];
+    for (let i = 0; i < 4; ++i) {
+      let arr = [1, 1, 1, 1];
+      if (Array.isArray(colorsArr[i]) && colorsArr[i].length >= 3) {
+        arr = colorsArr[i];
+      }
+      colorUniforms[`color${i}`] = { value: new THREE.Color(arr[0], arr[1], arr[2]) };
+      console.log(`[ColorMaskShader] color${i}:`, arr);
+    }
+    if (!maskTex) {
+      console.warn('[ColorMaskShader] Mask texture failed to load or is null!');
+    } else {
+      console.log('[ColorMaskShader] Mask texture loaded:', maskTex);
+    }
+    // ShaderMaterial for color mask blending (CS:GO style: mask.r selects color slot)
+    const uniforms: any = {
+      maskMap: { value: maskTex },
+      baseMap: { value: baseTex },
+      ...colorUniforms
+    };
+    const defines: any = {
+      USE_BASEMAP: baseTex ? 1 : 0,
+      DEBUG_MASK: 0 // Set to 1 to debug mask output visually
+    };
+    // The mask is usually a grayscale image; use mask.r to select color slot:
+    // 0-0.25: color0, 0.25-0.5: color1, 0.5-0.75: color2, 0.75-1.0: color3
+    const fragmentShader = `
+      uniform sampler2D maskMap;
+      #ifdef USE_BASEMAP
+      uniform sampler2D baseMap;
+      #endif
+      uniform vec3 color0;
+      uniform vec3 color1;
+      uniform vec3 color2;
+      uniform vec3 color3;
+      varying vec2 vUv;
+      void main() {
+        float m = texture2D(maskMap, vUv).r;
+        #ifdef DEBUG_MASK
+        gl_FragColor = vec4(m, m, m, 1.0); // Output mask as grayscale for debug
+        return;
+        #endif
+        vec3 blend =
+          (m < 0.25) ? color0 :
+          (m < 0.5) ? color1 :
+          (m < 0.75) ? color2 :
+          color3;
+        #ifdef USE_BASEMAP
+        vec4 base = texture2D(baseMap, vUv);
+        gl_FragColor = vec4(blend, 1.0) * base;
+        #else
+        gl_FragColor = vec4(blend, 1.0);
+        #endif
+      }
+    `;
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    const shaderMat = new THREE.ShaderMaterial({
+      uniforms,
+      defines,
+      vertexShader,
+      fragmentShader,
+      transparent: false,
+      side: THREE.FrontSide
+    });
+    // Assign to all materials on the mesh
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (let i = 0; i < materials.length; ++i) {
+      materials[i] = shaderMat;
+    }
+    (mesh as any).material = Array.isArray(mesh.material) ? materials : materials[0];
+    usedCustomColorMaskMaterial = true;
+    logMeshMaterialState('after custom color-mask material');
+  }
+
+  // If not using the custom color-mask material, proceed with normal logic
   let mapAssigned = false;
-  if (textures['pattern']) {
-    console.log('[DEBUG] pattern key found in textures, value:', textures['pattern']);
-    await assignTexture('map', 'pattern');
-    console.log('[DEBUG] assignTexture for pattern complete');
-    mapAssigned = true;
-  } else if (textures['color']) {
-    console.log('[DEBUG] color key found in textures, value:', textures['color']);
-    await assignTexture('map', 'color');
-    console.log('[DEBUG] assignTexture for color complete');
-    mapAssigned = true;
-  } else {
-    console.log('[DEBUG] No pattern or color key found in textures');
+  if (!usedCustomColorMaskMaterial) {
+    if (textures['pattern']) {
+      console.log('[DEBUG] pattern key found in textures, value:', textures['pattern']);
+      await assignTexture('map', 'pattern');
+      console.log('[DEBUG] assignTexture for pattern complete');
+      mapAssigned = true;
+    } else if (textures['color']) {
+      console.log('[DEBUG] color key found in textures, value:', textures['color']);
+      await assignTexture('map', 'color');
+      console.log('[DEBUG] assignTexture for color complete');
+      mapAssigned = true;
+    } else {
+      console.log('[DEBUG] No pattern or color key found in textures');
+    }
   }
 
   // PATCH: Defensive material handling and fallback
@@ -115,7 +232,19 @@ export const applyExtractedTexturesToMesh = async (
     }
     logMeshMaterialState('after mapAssigned');
   } else {
-    // PATCH: If neither pattern nor color was assigned, do NOT assign a fallback, just show the default material
+    // PATCH: If neither pattern nor color was assigned, but color slots exist, use the first color slot for the material color
+    const colorsArrSafe =
+      vmatData &&
+      vmatData.parameters &&
+      Array.isArray(vmatData.parameters.colors)
+        ? vmatData.parameters.colors
+        : [];
+    const hasColorSlots =
+      colorsArrSafe.length > 0 &&
+      Array.isArray(colorsArrSafe[0]) &&
+      colorsArrSafe[0].length >= 3;
+    const colorArr = hasColorSlots ? colorsArrSafe[0] : [1, 1, 1];
+    const colorValue = new THREE.Color(colorArr[0], colorArr[1], colorArr[2]);
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     let foundStandardMaterial = false;
     for (let i = 0; i < materials.length; ++i) {
@@ -132,11 +261,16 @@ export const applyExtractedTexturesToMesh = async (
           mat.visible = true;
           mat.transparent = false;
           mat.opacity = 1;
-          if (mat.color && typeof mat.color.set === 'function') {
-            mat.color.set(0xffffff);
+          if (mat.color && typeof mat.color.copy === 'function') {
+            if (hasColorSlots) {
+              mat.color.copy(colorValue);
+              console.warn('⚠️ No pattern/color texture found, using first color slot for material color.');
+            } else {
+              mat.color.set(0xffffff);
+              console.warn('⚠️ No pattern/color texture or color slots found, using default material and reset material visibility/opacity.');
+            }
           }
           mat.needsUpdate = true;
-          console.warn('⚠️ No pattern/color texture found, using default material and reset material visibility/opacity.');
         }
       } else {
         console.warn(
@@ -146,9 +280,15 @@ export const applyExtractedTexturesToMesh = async (
     }
     // If no standard material found, forcibly assign a new MeshStandardMaterial as a last resort
     if (!foundStandardMaterial && mesh && 'material' in mesh) {
-      console.warn('⚠️ No standard mesh material found. Forcibly assigning new MeshStandardMaterial to ensure visibility.');
-      const newMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-      (mesh as any).material = newMat;
+      if (hasColorSlots) {
+        console.warn('⚠️ No standard mesh material found. Forcibly assigning new MeshStandardMaterial with color slot.');
+        const newMat = new THREE.MeshStandardMaterial({ color: colorValue });
+        (mesh as any).material = newMat;
+      } else {
+        console.warn('⚠️ No standard mesh material found. Forcibly assigning new MeshStandardMaterial to ensure visibility.');
+        const newMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        (mesh as any).material = newMat;
+      }
     }
     logMeshMaterialState('after no mapAssigned');
   }

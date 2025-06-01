@@ -145,7 +145,28 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
         console.log("No scene or paintindex, skipping material loading");
         setIsLoaded(true);
         return;
-      }      try {
+      }
+
+      // Remove all materials from the model before loading new ones
+      scene.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          // Dispose of the old material if possible
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => {
+              if (mat && typeof mat.dispose === 'function') mat.dispose();
+            });
+          } else if (typeof child.material.dispose === 'function') {
+            child.material.dispose();
+          }
+          child.material = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            roughness: 0.5,
+            metalness: 0.7
+          });
+        }
+      });
+
+      try {
         // First determine if we're using a legacy model for this weapon/skin
         const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
         const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
@@ -356,6 +377,12 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
             (async () => {
               try {
                 await applyExtractedTexturesToMesh(child, textures, materialData);
+                // --- Make normal map even more intense if present ---
+                if (child.material && 'normalMap' in child.material && child.material.normalMap) {
+                  // Dramatically increase normalScale
+                  child.material.normalScale = new THREE.Vector2(100, 100);
+                  child.material.needsUpdate = true;
+                }
                 console.log(`✅ [applyExtractedTexturesToMesh] Applied to mesh: ${child.name}`);
               } catch (err) {
                 console.error(`❌ Error in applyExtractedTexturesToMesh for mesh ${child.name}:`, err);
@@ -541,31 +568,31 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
       <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
         <CameraControlsManager />
         {/* Enhanced, studio-style lighting setup for even illumination */}
-        <ambientLight intensity={0.8} color={0xffffff} />
+        <ambientLight intensity={0.2} color={0xefefef} />
         {/* Hemisphere light for global fill */}
         <hemisphereLight
-          color={0xffffff}
+          color={0xefefef}
           groundColor={0x888888}
-          intensity={0.7}
+          intensity={0.2}
           position={[0, 10, 0]}
         />
         {/* Key light: strong, from above/front-right */}
         <directionalLight
           position={[4, 8, 8]}
           intensity={0.7}
-          color={0xffffff}
+          color={0xefefef}
           castShadow
           shadow-mapSize-width={1024}
           shadow-mapSize-height={1024}
         />
         {/* Fill lights from multiple angles for even illumination */}
-        <directionalLight position={[-4, 4, -8]} intensity={0.5} color={0xffffff} />
+        <directionalLight position={[-4, 4, -8]} intensity={0.5} color={0xefefef} />
         <directionalLight position={[0, 6, -10]} intensity={0.3} color={0xbfd4e6} />
-        <directionalLight position={[0, -6, 6]} intensity={0.3} color={0xffffff} />
-        <directionalLight position={[6, -4, 0]} intensity={0.2} color={0xffffff} />
-        <directionalLight position={[-6, -4, 0]} intensity={0.2} color={0xffffff} />
+        <directionalLight position={[0, -6, 6]} intensity={0.3} color={0xefefef} />
+        <directionalLight position={[6, -4, 0]} intensity={0.2} color={0xefefef} />
+        <directionalLight position={[-6, -4, 0]} intensity={0.2} color={0xefefef} />
         {/* Extra point light for subtle fill from the front */}
-        <pointLight position={[0, 0, 5]} intensity={0.2} color={0xffffff} />
+        <pointLight position={[0, 0, 5]} intensity={0.2} color={0xefefef} />
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
           <ErrorBoundary fallback={<Box args={[1, 1, 1]} material={new THREE.MeshNormalMaterial()} />}>
             {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} />}

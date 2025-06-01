@@ -84,4 +84,11 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     urbanddpat: 'hy_ddpat_urb', //broken
     tilted: 'cu_overpass_aqua_deagle',
     mudder: 'hy_mottled_sand', //broken
+    // Dualies
+    cobrastrike: 'gs_dualberettas_cobra',
+    twinturbo: 'cu_dual_elites_rally',
+    melondrama: 'cu_elites_beware',
+    duelist: 'gs_mother_of_pearl_elite',
+    hemoglobin: 'am_ossify_red', //broken
+    demolition: 'so_tangerine',
 };
