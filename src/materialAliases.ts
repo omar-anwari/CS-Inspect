@@ -91,4 +91,6 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     duelist: 'gs_mother_of_pearl_elite',
     hemoglobin: 'am_ossify_red', //broken
     demolition: 'so_tangerine',
+    marina: 'hy_marina_sunrise', //broken
+    sweetlittleangels: 'cu_overpass_baby_dualies',
 };
