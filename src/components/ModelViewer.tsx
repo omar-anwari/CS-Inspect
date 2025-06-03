@@ -173,7 +173,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
         console.log(`🔧 Material loading: Using legacy model? ${useLegacyModel} for ${baseWeaponName}`);
 
         // Get skin info first to get the normalized name
-        const skinInfo = await getSkinInfo(itemData.full_item_name, itemData.paintindex);        if (!skinInfo) {
+        const skinInfo = await getSkinInfo(itemData.full_item_name, itemData.paintindex); if (!skinInfo) {
           console.log("No skin info found, using gray material");
           applyGrayMaterial();
           setIsLoaded(true);
@@ -205,7 +205,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
 
         // Check material aliases for the correct pattern name
         const { MATERIAL_ALIASES } = await import('../materialAliases');
-        const patternName = MATERIAL_ALIASES[normalizedName];        if (!patternName) {
+        const patternName = MATERIAL_ALIASES[normalizedName]; if (!patternName) {
           console.log(`No pattern found for skin: ${normalizedName}`);
           applyGrayMaterial();
           setIsLoaded(true);
@@ -259,13 +259,16 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
 
           // Common VCOMPMAT subfolders based on your screenshot
           const vcompmatFolders = [
+            'items',
+            'assets',
+            'paintkits',
+            'community',
             'community/community_33',
             'community/community_34',
             'community/community_35',
-            'legacy',
             'limited_time',
             'set_graphic_design',
-            'set_overpass_2025',
+            'set_overpass_2024',
             'set_realism_camo',
             'set_train_2025',
             'timed_drops',
@@ -478,7 +481,7 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
             // If the preferred model doesn't exist, try the other version as a fallback
             const fallbackPath = resolveModelPath(baseWeaponName, !useLegacyModel);
             console.log('Trying fallback model path:', fallbackPath);
-            
+
             const fallbackExists = await checkFileExists(fallbackPath);
             if (fallbackExists) {
               console.log('Using fallback model:', fallbackPath);
