@@ -93,4 +93,12 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     demolition: 'so_tangerine',
     marina: 'hy_marina_sunrise', //broken
     sweetlittleangels: 'cu_overpass_baby_dualies',
+    dezastre: 'gs_dual_elites_dezastre',
+    urbanshock: 'cu_elites_urbanstorm',
+    hydrostrike: 'dual_elite_hydro_strike',
+    royalconsorts: 'gs_dual_berettas_golden_venice', //sort of broken, parts aren't gold
+    floracarnivora: 'cu_dual_elites_evil_flora',
+    cobaltquartz: 'am_crystallized_blue', //broken
+    // emerald: 'an_emerald' //already handled in CZ75, still broken
+    blacklimba: 'cu_season_elites_bravo',
 };
