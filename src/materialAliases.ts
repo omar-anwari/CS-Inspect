@@ -41,6 +41,7 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     jungledashed: 'sp_tape_short_jungle', //broken
     pinkpearl: 'soe_pink_pearl', //broken
     framework: 'hy_vertigoillusion', //half broken
+    
     // Deagle
     goldenkoi: 'am_scales_bravo', //broken
     printstream: 'cu_deag_printstream',
@@ -84,6 +85,7 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     urbanddpat: 'hy_ddpat_urb', //broken
     tilted: 'cu_overpass_aqua_deagle',
     mudder: 'hy_mottled_sand', //broken
+
     // Dualies
     cobrastrike: 'gs_dualberettas_cobra',
     twinturbo: 'cu_dual_elites_rally',
@@ -101,4 +103,49 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     cobaltquartz: 'am_crystallized_blue', //broken
     // emerald: 'an_emerald' //already handled in CZ75, still broken
     blacklimba: 'cu_season_elites_bravo',
+    retribution: 'cu_retribution',
+    anodizednavy: 'an_navy', //broken
+    panther: 'so_panther',
+    balance: 'gs_dual_elites_rose',
+    tread: 'gs_dual_berettas_tread',
+    cartel: 'aq_dualberettas_cartel',
+    shred: 'sp_elites_winter_raider', //broken
+    elite16:'gs_dual_elites_classic',
+    ventilators: 'gs_dualberettas_ventilators',
+    hideout: 'dual_berettas_lethal_grin',
+    pyre: 'hy_gelpen_dark', //broken
+    switchboard: 'hy_numbers_green', //broken
+    rosenacre: 'soo_rose_gold', //broken
+    polishedmalachite: 'soch_marble_grips', //broken
+    stained: 'aq_forced', //figure out patterns
+    driftwood: 'sp_dry_wood', //broken
+    mooninlibra: 'hy_zodiac1', //broken
+    briar: 'hy_vines', //broken
+    heist: 'am_heist_plans_green', //broken
+    bordeux: 'soch_acrylic_grips', //broken
+    colony: 'so_space_marine', //check if the name is correct
+    oilchange: 'sp_engine_dirty', //broken
+    contractor: 'so_pmc', //check if the name is correct
+
+    // Five-SeveN
+    hyperbeast: 'cu_fiveseven_hyperbeast',
+    angrymob: 'cu_five_seven_angry',
+    fallhazard: 'cu_vertigo_fiveseven',
+    fairytale: 'cu_five_seven_diary',
+    monkeybusiness: 'cu_fiveseven_banana',
+    fowlplay: 'aq_57_feathers',
+    neonkimono: 'hy_kimono_diamonds', //broken
+    berriesandcherries: 'aa_fade_red_blue', //broken
+    casehardened: 'aq_oiled', //half broken
+    coppergalaxy: 'am_copper_flecks', //broken
+    // heattreated: 'aq_case_hardened_fiveseven', deagle has the same name, change normalization to include weapon name
+    triumvirate: 'cu_fiveseven_augmented',
+    boostprotocol: 'gs_five_seven_efusion',
+    hybrid: 'fiveseven_hybrid',
+    retrobution: 'cu_fiveseven_retrobution',
+    buddy: 'cu_fiveseven_gsg9',
+    crimsonblossom: 'hy_bud_red', //broken
+    // nitro: 'so_orange_accents', //m4 has the same name, change normalization to include weapon name
+    nightshade: 'hy_flowers', //broken
+    kami: 'hy_kami', //broken
 };
