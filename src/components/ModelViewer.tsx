@@ -167,13 +167,15 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
       });
 
       try {
+
         // First determine if we're using a legacy model for this weapon/skin
         const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
         const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
         console.log(`🔧 Material loading: Using legacy model? ${useLegacyModel} for ${baseWeaponName}`);
 
         // Get skin info first to get the normalized name
-        const skinInfo = await getSkinInfo(itemData.full_item_name, itemData.paintindex); if (!skinInfo) {
+        const skinInfo = await getSkinInfo(itemData.full_item_name, itemData.paintindex);
+        if (!skinInfo) {
           console.log("No skin info found, using gray material");
           applyGrayMaterial();
           setIsLoaded(true);
@@ -182,26 +184,58 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
 
         console.log(`Found skin: ${skinInfo.name}`);
 
-        // Extract ONLY the skin name from the full item name
-        // Format is usually "Weapon | Skin Name (Condition)"
-        let skinNameOnly = skinInfo.name;
+        // --- Enhanced normalization: weapon + skin + phase/variant ---
 
-        // If it contains a pipe |, extract the part after it
+        // Extract weapon name (e.g., "Glock-18 | Gamma Doppler (Factory New)" -> "glock")
+        let weaponName = '';
+        if (skinInfo.name.includes('|')) {
+          weaponName = skinInfo.name.split('|')[0].trim().toLowerCase();
+          // Remove stattrak prefix if present
+          weaponName = weaponName.replace(/^stattrak(™|tm)?\s*/i, '');
+          weaponName = weaponName.replace(/[^a-z0-9]/g, '');
+        }
+
+        // Extract skin name (e.g., "Gamma Doppler")
+        let skinNameOnly = skinInfo.name;
         if (skinNameOnly.includes('|')) {
           skinNameOnly = skinNameOnly.split('|')[1].trim();
         }
+        // Remove stattrak prefix if present
+        skinNameOnly = skinNameOnly.replace(/^stattrak(™|tm)?\s*/i, '');
+        // Remove condition in parentheses like "(Factory New)", etc.
+        skinNameOnly = skinNameOnly.replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
 
-        // Remove condition in parentheses like "(Factory New)", "(Field-Tested)", etc.
-        skinNameOnly = skinNameOnly.replace(/\s*\([^)]*\).*$/, '').trim();
+        // --- Phase/variant extraction: Prefer imageurl, fallback to skin name ---
 
-        console.log(`Extracted skin name: ${skinNameOnly}`);
+        let phase = '';
+        // Try to extract from imageurl first
+        const phaseRegex = /_(phase[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)_/i;
+        if (itemData.imageurl) {
+          const match = itemData.imageurl.match(phaseRegex);
+          if (match) {
+            phase = match[1].toLowerCase();
+          }
+        }
+        // If not found in imageurl, fallback to skin name (but do NOT match 'doppler' as a phase)
+        if (!phase) {
+          const phaseMatch = skinNameOnly.match(/(phase\s*[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)$/i);
+          if (phaseMatch) {
+            phase = phaseMatch[1].toLowerCase().replace(/\s+/g, '');
+            skinNameOnly = skinNameOnly.replace(phaseMatch[1], '').trim();
+          }
+        }
+        // Remove all non-alphanumeric from skinNameOnly after phase extraction
+        skinNameOnly = skinNameOnly.replace(/[^a-z0-9]/g, '');
 
-        // Normalize ONLY the skin name (not weapon name or condition)
-        const normalizedName = skinNameOnly.toLowerCase()
-          .replace(/[^a-z0-9]/g, '')
-          .trim();
+        // Compose normalized key: weapon + skin + phase (if any)
+        let normalizedName = weaponName + skinNameOnly + (phase ? phase : '');
 
-        console.log(`Normalized skin name: ${normalizedName}`);
+        // Fallback: if no weapon name, just use skinNameOnly + phase
+        if (!weaponName) {
+          normalizedName = skinNameOnly + (phase ? phase : '');
+        }
+
+        console.log(`Normalized skin key: ${normalizedName}`);
 
         // Check material aliases for the correct pattern name
         const { MATERIAL_ALIASES } = await import('../materialAliases');

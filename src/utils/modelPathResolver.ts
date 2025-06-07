@@ -8,15 +8,18 @@ export {};
  */
 export const getBaseWeaponName = (fullItemName: string): string => {
   if (!fullItemName) return '';
-  
+
   // Handle special cases for knives with stars
   if (fullItemName.startsWith('★ ')) {
     fullItemName = fullItemName.substring(2);
   }
-  
+
+  // Remove StatTrak™ prefix if present (case-insensitive, with or without ™)
+  fullItemName = fullItemName.replace(/^stattrak(™|tm)?\s*/i, '');
+
   // Get the base name (before the | character)
   const baseName = fullItemName.split('|')[0].trim().toLowerCase();
-  
+
   // Remove any spaces and special characters
   return baseName.replace(/[\s-]/g, '');
 };
