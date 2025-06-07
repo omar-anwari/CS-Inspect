@@ -148,4 +148,23 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     // nitro: 'so_orange_accents', //m4 has the same name, change normalization to include weapon name
     nightshade: 'hy_flowers', //broken
     kami: 'hy_kami', //broken
+    urbanhazard: 'cu_fiveseven_urban_hazard',
+    silverquartz: 'am_crystallized_silver', //broken
+    capillary: 'cu_fiveseven_vein',
+    violentdaimyo: 'cu_five_seven_daimyo',
+    scumbria: 'aq_five_seven_scumbria', //broken
+    flametest: 'gs_fiveseven_hot_rod_violet',
+    scrawl: 'cu_fiveseven_alpha_omega',
+    candyapple: 'so_red', //broken
+    hotshot: 'so_grey_nuclear_orange_five_seven', //broken
+    skyblue: 'soe_blue_and_chrome',  //broken
+    midnightpaintover: 'hy_overpass_paintover_teal', //broken
+    orangepeel: 'sp_tape_orange', //broken
+    witheredvine: 'sp_moro_textile_purple_yellow', //broken
+    anodizedgunmetal: 'an_gunmetal_bravo', //broken
+    jungle: 'so_jungle', //broken
+    // contractor: 'so_pmc', //already handled in Dualies, but check if the name is correct
+    autumnthicket: 'soo_branches', //broken
+    forestnight: 'hy_forest_night', //broken
+    coolant: 'hy_ducts_green', //broken
 };
