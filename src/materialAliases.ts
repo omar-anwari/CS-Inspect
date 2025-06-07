@@ -169,4 +169,10 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     fivesevencoolant: 'hy_ducts_green', //broken
 
     //Glock-18
+    glock18gammadopplerphase1
+    glock18gammadopplerphase2
+    glock18gammadopplerphase3
+    glock18gammadopplerphase4
+    glock18gammadoppler
+
 };
