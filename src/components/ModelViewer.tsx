@@ -638,7 +638,7 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
           </ErrorBoundary>
         </Suspense>
         <OrbitControls
-          enablePan={true}
+          enablePan={false}
           enableZoom={true}
           enableRotate={true}
         />

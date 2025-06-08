@@ -193,4 +193,5 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     glock18steeldisruption: 'am_ddpatdense_silver',
     glock18ramesesreach: 'cu_glock_ramzes',
     glock18royallegion: 'gs_glock18_award',
+    glock18pinkddpat: '',
 };
