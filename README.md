@@ -14,11 +14,12 @@ This is my bummy 3D inspect tool. You can input throw in an inspect link and see
 - CSS Modules
 
 ## Broken
-- I broke textures again
-- Gotta figure out stickers
-- Figure out how to simulate float
-- Figure out how to replicate patterns
-- Figure out how to rip directly from the game
+- [x] I broke textures again
+  - It's sort of working, need to fix masks, colours, etc
+- [ ] Gotta figure out stickers
+- [ ] Figure out how to simulate float
+- [ ] Figure out how to replicate patterns
+- [ ] Figure out how to rip directly from the game
 
 ## Getting Started
 Clone the repo, install dependencies, and run the development server:
