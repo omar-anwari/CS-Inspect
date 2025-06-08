@@ -97,7 +97,14 @@ export interface ModelViewerRef {
 }
 
 // Loads a 3D model and tries to slap a skin on it
-const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: boolean }> = ({ path, itemData, autoRotate = true }) => {
+
+const WeaponModel: React.FC<{
+  path: string;
+  itemData?: ItemInfo;
+  autoRotate?: boolean;
+  modelScale?: number;
+  onModelLoaded?: () => void;
+}> = ({ path, itemData, autoRotate = true, modelScale = 0.1, onModelLoaded }) => {
   // State for when things go wrong (which is often)
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -105,6 +112,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Pre-validate the GLTF file format (because sometimes you get a 404)
+  // Call onModelLoaded when model is loaded and ready
   useEffect(() => {
     console.log('Pre-validating model from path:', path);
 
@@ -120,6 +128,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
           // Attempt to parse as JSON to catch format errors early
           JSON.parse(text);
           console.log("Model file validated successfully as JSON");
+          if (onModelLoaded) onModelLoaded();
         } catch (err) {
           const error = err as Error;
           console.error("Model file is not valid JSON:", error);
@@ -190,8 +199,8 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
         let weaponName = '';
         if (skinInfo.name.includes('|')) {
           weaponName = skinInfo.name.split('|')[0].trim().toLowerCase();
-          // Remove stattrak prefix if present
-          weaponName = weaponName.replace(/^stattrak(™|tm)?\s*/i, '');
+          // Remove stattrak or souvenir prefix if present
+          weaponName = weaponName.replace(/^(stattrak(™|tm)?|souvenir)\s*/i, '');
           weaponName = weaponName.replace(/[^a-z0-9]/g, '');
         }
 
@@ -200,8 +209,8 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
         if (skinNameOnly.includes('|')) {
           skinNameOnly = skinNameOnly.split('|')[1].trim();
         }
-        // Remove stattrak prefix if present
-        skinNameOnly = skinNameOnly.replace(/^stattrak(™|tm)?\s*/i, '');
+        // Remove stattrak or souvenir prefix if present
+        skinNameOnly = skinNameOnly.replace(/^(stattrak(™|tm)?|souvenir)\s*/i, '');
         // Remove condition in parentheses like "(Factory New)", etc.
         skinNameOnly = skinNameOnly.replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
 
@@ -450,7 +459,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
     <primitive
       object={scene}
       ref={modelRef}
-      scale={0.1}
+      scale={modelScale}
       position={[0, 0, 0]}
     />
   );
@@ -463,6 +472,62 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   showStats = false,
   autoRotate = true
 }, ref) => {
+  // Responsive model scale state
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [modelScale, setModelScale] = useState(0.1);
+  const [modelLoaded, setModelLoaded] = useState(false);
+
+  // Responsive scaling effect (use ResizeObserver for initial and dynamic sizing)
+  useEffect(() => {
+    const updateScale = () => {
+      if (!containerRef.current) return;
+      const { width, height } = containerRef.current.getBoundingClientRect();
+      const minDim = Math.min(width, height);
+      // Make the model much smaller (about 1/5 the width/height of the container)
+      // Further increase the denominator to shrink the model more
+      const scale = Math.max(0.08, Math.min(0.5, minDim / 4000));
+      setModelScale(scale);
+    };
+
+    updateScale(); // Initial call
+
+    // Use ResizeObserver for container size changes
+    let resizeObserver: ResizeObserver | null = null;
+    if (containerRef.current && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(updateScale);
+      resizeObserver.observe(containerRef.current);
+    } else {
+      // Fallback for environments without ResizeObserver
+      window.addEventListener('resize', updateScale);
+    }
+    return () => {
+      if (resizeObserver && containerRef.current) {
+        resizeObserver.unobserve(containerRef.current);
+      } else {
+        window.removeEventListener('resize', updateScale);
+      }
+    };
+  }, []);
+
+  // Re-run scale update when model is loaded, with a short delay to ensure DOM/canvas is ready
+  useEffect(() => {
+    if (modelLoaded) {
+      // Wait for next paint to ensure Three.js canvas and container are fully rendered
+      const handle = window.requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (containerRef.current) {
+            const { width, height } = containerRef.current.getBoundingClientRect();
+            const minDim = Math.min(width, height);
+            // Make the model much smaller (about 1/5 the width/height of the container)
+            // Further increase the denominator to shrink the model more
+            const scale = Math.max(0.08, Math.min(0.5, minDim / 4000));
+            setModelScale(scale);
+          }
+        }, 30); // 30ms delay to allow DOM/canvas to settle
+      });
+      return () => window.cancelAnimationFrame(handle);
+    }
+  }, [modelLoaded]);
   // State for model path, loading, and error
   const [modelPath, setModelPath] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -601,38 +666,27 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   }
 
   return (
-    <div style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
+    <div ref={containerRef} style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
       <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
         <CameraControlsManager />
-        {/* Enhanced, studio-style lighting setup for even illumination */}
-        <ambientLight intensity={0.2} color={0xefefef} />
-        {/* Hemisphere light for global fill */}
+        {/* Even, omni-directional lighting for consistent illumination on all sides */}
+        <ambientLight intensity={0.5} color={0xffffff} />
         <hemisphereLight
-          color={0xefefef}
+          color={0xffffff}
           groundColor={0x888888}
-          intensity={0.2}
+          intensity={0.5}
           position={[0, 10, 0]}
         />
-        {/* Key light: strong, from above/front-right */}
-        <directionalLight
-          position={[4, 8, 8]}
-          intensity={0.7}
-          color={0xefefef}
-          castShadow
-          shadow-mapSize-width={1024}
-          shadow-mapSize-height={1024}
-        />
-        {/* Fill lights from multiple angles for even illumination */}
-        <directionalLight position={[-4, 4, -8]} intensity={0.5} color={0xefefef} />
-        <directionalLight position={[0, 6, -10]} intensity={0.3} color={0xbfd4e6} />
-        <directionalLight position={[0, -6, 6]} intensity={0.3} color={0xefefef} />
-        <directionalLight position={[6, -4, 0]} intensity={0.2} color={0xefefef} />
-        <directionalLight position={[-6, -4, 0]} intensity={0.2} color={0xefefef} />
-        {/* Extra point light for subtle fill from the front */}
-        <pointLight position={[0, 0, 5]} intensity={0.2} color={0xefefef} />
+        {/* Six-point lighting: one directional from each axis direction */}
+        <directionalLight position={[10, 0, 0]} intensity={0.5} color={0xffffff} />
+        <directionalLight position={[-10, 0, 0]} intensity={0.5} color={0xffffff} />
+        <directionalLight position={[0, 10, 0]} intensity={0.5} color={0xffffff} />
+        <directionalLight position={[0, -10, 0]} intensity={0.5} color={0xffffff} />
+        <directionalLight position={[0, 0, 10]} intensity={0.5} color={0xffffff} />
+        <directionalLight position={[0, 0, -10]} intensity={0.5} color={0xffffff} />
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
           <ErrorBoundary fallback={<Box args={[1, 1, 1]} material={new THREE.MeshNormalMaterial()} />}>
-            {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} />}
+            {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} modelScale={modelScale} onModelLoaded={() => setModelLoaded(true)} />}
             {/* Use a neutral HDRI for subtle reflections, not a forest */}
             <Environment preset="city" background={false} />
           </ErrorBoundary>

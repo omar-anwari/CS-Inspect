@@ -193,5 +193,25 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     glock18steeldisruption: 'am_ddpatdense_silver',
     glock18ramesesreach: 'cu_glock_ramzes',
     glock18royallegion: 'gs_glock18_award',
-    glock18pinkddpat: '',
+    glock18pinkddpat: 'hy_ddpat_pink', //broken
+    glock18grinder: 'aq_glock_coiled', //figure our masks
+    glock18nucleargarden: 'am_nuclear_skulls_green', //broken
+    glock18block18: 'glock_brick_mondrian',
+    glock18moonrise: 'aa_glock_18_urban_moon_fever', //broken
+    glock18weasel: 'cu_glock18_weasel',
+    glock18umbralrabbit: 'cu_glock_moon_rabbit',
+    glock18reactor: 'am_nuclear_pattern1_glock', //broken
+    glock18coralbloom: 'soe_roses', //broken
+    glock18bluefissure: 'hy_craquelure', //broken
+    glock18candyapple: 'so_red', //broken
+    glock18tealgraf: 'hy_overpass_tagged_teal', //broken
+    glock18bunsenburner: 'aq_glock18_flames_blue',
+    glock18catacombs: 'cu_glock_deathtoll',
+    glock18greenline: 'glock_train_green',
+    glock18warhawk: 'gs_glock_thunder_dust',
+    glock18wraiths: '',
+    glock18ironwork: '',
+    glock18clearpolymer: '',
+    glock18sacrifice: '',
+
 };
