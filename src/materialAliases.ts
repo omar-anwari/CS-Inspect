@@ -169,10 +169,28 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     fivesevencoolant: 'hy_ducts_green', //broken
 
     //Glock-18
-    glock18gammadopplerphase1
-    glock18gammadopplerphase2
-    glock18gammadopplerphase3
-    glock18gammadopplerphase4
-    glock18gammadoppler
-
+    glock18gammadopplerphase1: 'am_gamma_doppler_phase1_glock', //broken
+    glock18gammadopplerphase2: 'am_gamma_doppler_phase2_glock', //broken
+    glock18gammadopplerphase3: 'am_gamma_doppler_phase3_glock', //broken
+    glock18gammadopplerphase4: 'am_gamma_doppler_phase4_glock', //broken
+    glock18gammadoppleremerald: 'am_emerald_marbleized_glock', //broken
+    glock18neonoir: 'cu_glock_noir',
+    glock18goldtoof: 'glock_chomper',
+    glock18bulletqueen: 'cu_glock18_warmaiden',
+    glock18wastelandrebel: 'cu_glock_wasteland_rebel',
+    glock18twilightgalaxy: 'am_aqua_flecks', //broken
+    glock18axia: 'gsch_axia_glock',
+    glock18waterelemental: 'cu_glock-liquescent',
+    glock18snackattack: 'cu_glock_snackattack',
+    glock18shinobu: 'glock_shinobu',
+    glock18vogue: 'cu_glock_eyecontact',
+    glock18fade: 'aa_fade', //broken
+    glock18synthleaf: 'hy_leaf_blue', //broken
+    glock18dragontattoo: 'am_dragon_glock', //broken
+    glock18franklin: 'cu_money_glock',
+    glock18brass: 'aq_brass', //broken
+    glock18glockingbird: 'spe_missile', //broken
+    glock18steeldisruption: 'am_ddpatdense_silver',
+    glock18ramesesreach: 'cu_glock_ramzes',
+    glock18royallegion: 'gs_glock18_award',
 };

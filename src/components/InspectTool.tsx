@@ -43,15 +43,62 @@ interface ItemInfo {
   paintindex?: number;
   imageurl: string;
   keychains: Keychain[];
+  normalized_skin_name?: string; // Add normalized skin name with phase/variant
 }
 
 // Stuff to keep track of in the inspect history
 interface HistoryItem {
   link: string;
-  name: string;
+  name: string; // This will now include phase/variant if present
   wear_name: string;
   floatvalue: number;
   timestamp: number;
+  normalized_skin_name?: string; // For display and lookup
+}
+// Helper to extract phase/variant from imageurl or skin name
+function getPhaseOrVariant(item: ItemInfo): string {
+  // Try to extract from imageurl first
+  const phaseRegex = /_(phase[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)_/i;
+  if (item.imageurl) {
+    const match = item.imageurl.match(phaseRegex);
+    if (match) {
+      return match[1].toLowerCase();
+    }
+  }
+  // Fallback to skin name
+  let skinName = item.full_item_name;
+  if (skinName.includes('|')) {
+    skinName = skinName.split('|')[1].replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
+  }
+  const phaseMatch = skinName.match(/(phase\s*[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)$/i);
+  if (phaseMatch) {
+    return phaseMatch[1].toLowerCase().replace(/\s+/g, '');
+  }
+  return '';
+}
+
+// Helper to build normalized skin name for info/history
+function getNormalizedSkinName(item: ItemInfo): string {
+  let weaponName = '';
+  if (item.full_item_name.includes('|')) {
+    weaponName = item.full_item_name.split('|')[0].trim().toLowerCase();
+    weaponName = weaponName.replace(/^stattrak(™|tm)?\s*/i, '');
+    weaponName = weaponName.replace(/[^a-z0-9]/g, '');
+  }
+  let skinNameOnly = item.full_item_name;
+  if (skinNameOnly.includes('|')) {
+    skinNameOnly = skinNameOnly.split('|')[1].trim();
+  }
+  skinNameOnly = skinNameOnly.replace(/^stattrak(™|tm)?\s*/i, '');
+  skinNameOnly = skinNameOnly.replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
+  let phase = getPhaseOrVariant(item);
+  if (phase) {
+    skinNameOnly = skinNameOnly.replace(phase, '').trim();
+  }
+  skinNameOnly = skinNameOnly.replace(/[^a-z0-9]/g, '');
+  let normalized = weaponName + skinNameOnly + (phase ? phase : '');
+  if (!weaponName) normalized = skinNameOnly + (phase ? phase : '');
+  return normalized;
 }
 
 // Props for InspectTool. You probably won't need to touch these unless you're breaking things on purpose.
@@ -106,12 +153,27 @@ const InspectTool: React.FC<InspectToolProps> = ({
   const addToHistory = (link: string, itemData: ItemInfo) => {
     const existingIndex = inspectHistory.findIndex(item => item.link === link);
     if (existingIndex === -1) {
+      // Compute normalized skin name for display
+      const normalizedSkinName = getNormalizedSkinName(itemData);
+      const phase = getPhaseOrVariant(itemData);
+      // Show phase/variant in display name if present
+      let displayName = itemData.full_item_name;
+      if (phase) {
+        // Insert phase/variant after skin name, before (Factory New) etc.
+        if (displayName.includes('|')) {
+          let [weapon, rest] = displayName.split('|');
+          let skin = rest.replace(/\s*\([^)]*\).*$/, '').trim();
+          let condition = rest.match(/\(([^)]*)\)/);
+          displayName = `${weapon.trim()} | ${skin} ${phase.charAt(0).toUpperCase() + phase.slice(1)}${condition ? ' (' + condition[1] + ')' : ''}`;
+        }
+      }
       const newHistoryItem: HistoryItem = {
         link,
-        name: itemData.full_item_name,
+        name: displayName,
         wear_name: itemData.wear_name,
         floatvalue: itemData.floatvalue,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        normalized_skin_name: normalizedSkinName
       };
       setInspectHistory(prev => [...prev.filter(item => item.link !== link), newHistoryItem].slice(-10));
     }
@@ -202,6 +264,9 @@ const InspectTool: React.FC<InspectToolProps> = ({
           throw new Error('Invalid response format: missing iteminfo');
         }
         // Update state with the fetched item data
+        // Compute normalized skin name and attach to itemData
+        const normalizedSkinName = getNormalizedSkinName(data.iteminfo);
+        data.iteminfo.normalized_skin_name = normalizedSkinName;
         setItemData(data.iteminfo);
 
         // Add to history if we have a current inspect link
@@ -419,7 +484,22 @@ const InspectTool: React.FC<InspectToolProps> = ({
                 <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
-            <div className="item-full-name">{itemData.full_item_name}</div>
+            {/* Show phase/variant in the info panel if present */}
+            <div className="item-full-name">
+              {(() => {
+                const phase = getPhaseOrVariant(itemData);
+                if (phase) {
+                  // Insert phase/variant after skin name, before (Factory New) etc.
+                  if (itemData.full_item_name.includes('|')) {
+                    let [weapon, rest] = itemData.full_item_name.split('|');
+                    let skin = rest.replace(/\s*\([^)]*\).*$/, '').trim();
+                    let condition = rest.match(/\(([^)]*)\)/);
+                    return `${weapon.trim()} | ${skin} ${phase.charAt(0).toUpperCase() + phase.slice(1)}${condition ? ' (' + condition[1] + ')' : ''}`;
+                  }
+                }
+                return itemData.full_item_name;
+              })()}
+            </div>
             <div className="item-float-value">{itemData.floatvalue.toFixed(8)}</div>            <div className="wear-section">
               <div className="wear-label">Wear Rating:</div>
               <div className="wear-value">{itemData.wear_name}</div>

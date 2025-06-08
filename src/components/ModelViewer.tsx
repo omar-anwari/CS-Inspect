@@ -417,7 +417,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
                 // --- Make normal map even more intense if present ---
                 if (child.material && 'normalMap' in child.material && child.material.normalMap) {
                   // Dramatically increase normalScale
-                  child.material.normalScale = new THREE.Vector2(100, 100);
+                  child.material.normalScale = new THREE.Vector2(1, 1);
                   child.material.needsUpdate = true;
                 }
                 console.log(`✅ [applyExtractedTexturesToMesh] Applied to mesh: ${child.name}`);
