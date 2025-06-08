@@ -205,13 +205,23 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     glock18bluefissure: 'hy_craquelure', //broken
     glock18candyapple: 'so_red', //broken
     glock18tealgraf: 'hy_overpass_tagged_teal', //broken
-    glock18bunsenburner: 'aq_glock18_flames_blue',
-    glock18catacombs: 'cu_glock_deathtoll',
+    glock18bunsenburner: 'aq_glock18_flames_blue', //half broken
+    glock18catacombs: 'cu_glock_deathtoll', //broken
     glock18greenline: 'glock_train_green',
     glock18warhawk: 'gs_glock_thunder_dust',
-    glock18wraiths: '',
-    glock18ironwork: '',
-    glock18clearpolymer: '',
-    glock18sacrifice: '',
+    glock18wraiths: 'gs_glock18_wrathys',
+    glock18ironwork: 'aq_glock_dark-fall',
+    glock18clearpolymer: 'gs_glock_polymer',
+    glock18sacrifice: 'cu_glock_hero',
+    glock18sanddune: 'so_sand_bravo', //broken
+    glock18groundwater: 'so_olive', //broken
+    glock18night: 'so_night', //broken
+    glock18redtire: 'sp_tire_tread_red', //broken
+    glock18oceantopo: 'hye_topo', //broken
+    glock18highbeam: 'aa_vertigo_blue', //broken
 
+    // P2000
+    p2000fireelemental: 'cu_p2000_fire_elemental',
+    p2000oceanfoam: 'am_ossify_blue_p2000_bravo', //broken
+    p2000corticera: 'cu_favela_p2000',
 };
