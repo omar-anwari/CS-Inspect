@@ -224,4 +224,21 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     p2000fireelemental: 'cu_p2000_fire_elemental',
     p2000oceanfoam: 'am_ossify_blue_p2000_bravo', //broken
     p2000corticera: 'cu_favela_p2000',
+    p2000imperialdragon: 'gs_p2000_imperial_dragon', //I think it's broken
+    p2000wickedsick: 'cu_p2000_decline',
+    p2000scorpion: 'am_scorpion_p2000', //broken
+    p2000woodsman: 'cu_p2000_hunter',
+    p2000spacerace: 'aa_spacerace_orange', //broken
+    p2000amberfade: 'aa_fade_metallic', //broken
+    p2000obsidian: 'cu_p2000_obsidian',
+    p2000handgun: 'aq_p2000_boom',
+    p2000acidetched: 'aq_p2000_acid_clover', //figure out patterns
+    p2000silver: 'an_silver', //broken
+    p2000dispatch: 'am_numbers_red_blue', //broken
+    p2000chainmail: 'am_chainmail', //broken
+    p2000pulse: 'cu_p2000_pulse',
+    p2000royalbaroque: 'spe_scarf_print', //broken
+    p2000redfragcam: 'hy_poly_camo', //broken
+    p2000imperial: 'am_p2000_imperial_red', //broken
+    p2000turf: 'gs_p2000-sport',
 };
