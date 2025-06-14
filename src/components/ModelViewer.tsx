@@ -406,7 +406,8 @@ const WeaponModel: React.FC<{
           roughness: materialData.roughnessPath,
           metalness: materialData.metalnessPath,
           ao: materialData.aoPath,
-          mask: materialData.maskPath
+          mask: materialData.maskPath,
+          wear: materialData.wearPath // <-- Correct property for wear mask
         };
         // Remove undefined values and cast to Record<string, string>
         const textures: Record<string, string> = Object.fromEntries(
@@ -422,7 +423,8 @@ const WeaponModel: React.FC<{
             meshCount++;
             (async () => {
               try {
-                await applyExtractedTexturesToMesh(child, textures, materialData);
+                // Pass the wear value from the API (itemData?.floatvalue) to the texture loader
+                await applyExtractedTexturesToMesh(child, textures, materialData, itemData?.floatvalue);
                 // --- Make normal map even more intense if present ---
                 if (child.material && 'normalMap' in child.material && child.material.normalMap) {
                   // Dramatically increase normalScale

@@ -240,5 +240,13 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     p2000royalbaroque: 'spe_scarf_print', //broken
     p2000redfragcam: 'hy_poly_camo', //broken
     p2000imperial: 'am_p2000_imperial_red', //broken
+    p2000oceanic: 'hy_p2000_oceani', //intentional spelling mistake and broken
     p2000turf: 'gs_p2000-sport',
+    p2000ivory: 'cu_p2000_ivory',
+    p2000suregrip: 'p2k_fractal',
+    p2000liftedspirits: 'cu_p2k_flying_dream',
+    p2000gnarled: 'aq_p2000_lost_world',
+    p2000urbanhazard: 'cu_p2000_urban_hazard',
+    p2000pathfinder: 'sp_labyrinth2', //broken
+    p2000coachclass: 'cu_luggage_p2000',
 };

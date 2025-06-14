@@ -6,6 +6,7 @@ import { getBaseWeaponName } from '../utils/modelPathResolver';
 import { getSkinInfo } from '../utils/itemsGameParser';
 import { parseVMAT, VMATData } from '../vmatParser';
 import * as THREE from 'three';
+import { applyExtractedTexturesToMesh } from './improvedTextureLoader';
 
 class ErrorBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
@@ -244,6 +245,28 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
               return;
             }
           }
+
+          // Apply textures and wear to the model
+          scene.traverse((child: THREE.Object3D) => {
+            if (child instanceof THREE.Mesh) {
+              if (child.material) {
+                // If the material has a map, we assume it's a texture
+                const hasTexture = child.material.map ? true : false;
+                console.log(`Child ${child.name} has texture: ${hasTexture}`);
+              } else {
+                console.warn(`Child ${child.name} has no material`);
+              }
+            }
+          });
+
+          // If you want to apply textures and wear in this viewer, you should traverse the scene and call applyExtractedTexturesToMesh on each mesh, e.g.:
+          // scene.traverse((child: THREE.Object3D) => {
+          //   if (child instanceof THREE.Mesh) {
+          //     applyExtractedTexturesToMesh(child, /* textures */, vmatData, itemData?.floatvalue);
+          //   }
+          // });
+          // Make sure to define and pass the correct textures object as needed.
+
         } catch (error) {
           console.error('Error in texture application:', error);
         }

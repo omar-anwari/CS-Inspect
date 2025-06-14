@@ -16,7 +16,8 @@ import { VMATData } from '../vmatParser';
 export const applyExtractedTexturesToMesh = async (
   mesh: THREE.Mesh | { material: any },
   textures: Record<string, string>,
-  vmatData: VMATData | null = null
+  vmatData: VMATData | null = null,
+  wearAmountOverride?: number
 ) => {
   // --- Remove any pre-existing material before applying new textures ---
   if (mesh && 'material' in mesh) {
@@ -395,6 +396,63 @@ export const applyExtractedTexturesToMesh = async (
       if ('aoMap' in mat && mat.aoMap) {
         applyConsistentTextureSettings(mat.aoMap, mat.map, 'aoMap');
       }
+    }
+  }
+
+  // --- Wear Mask Blending (CS2-style) ---
+  // If a wear texture and a wear amount (float value) are present, blend the wear mask over the main map
+  const effectiveWearAmount =
+    typeof wearAmountOverride === 'number'
+      ? wearAmountOverride
+      : vmatData && typeof vmatData.parameters.wearAmount === 'number'
+        ? vmatData.parameters.wearAmount
+        : undefined;
+  if (textures['wear'] && typeof effectiveWearAmount === 'number' && mapAssigned) {
+    const wearTex = await loadTextureWithFallbacks(textures['wear'], vmatData, { textureName: 'wear' });
+    if (wearTex) {
+      const wearAmount = effectiveWearAmount;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (let i = 0; i < materials.length; ++i) {
+        const mat = materials[i];
+        if (
+          (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) &&
+          mat.map
+        ) {
+          // Assign the wear mask as a custom uniform and inject blending logic into the albedo calculation
+          mat.userData.wearMap = wearTex;
+          mat.userData.wearAmount = wearAmount;
+          mat.onBeforeCompile = (shader) => {
+            shader.uniforms.wearMap = { value: mat.userData.wearMap };
+            shader.uniforms.wearAmount = { value: mat.userData.wearAmount };
+            
+            // Add uniform declarations at the top of fragment shader
+            shader.fragmentShader = `uniform sampler2D wearMap;
+uniform float wearAmount;
+` + shader.fragmentShader;
+            
+            // Debug: log where vUv is defined in the shader
+            console.log('Fragment shader vUv occurrences:', shader.fragmentShader.match(/vUv/g));
+            console.log('Vertex shader vUv occurrences:', shader.vertexShader.match(/vUv/g));
+            
+            // Try injecting at a different point where vUv is guaranteed to be available
+            // Use #include <uv_vertex> for vertex shader or find a better injection point
+            shader.fragmentShader = shader.fragmentShader.replace(
+              /#include <color_fragment>/g,
+              `#include <color_fragment>
+// --- WEAR BLENDING INJECTION ---
+#ifdef USE_MAP
+float wearMask = texture2D(wearMap, vMapUv).r;
+float reveal = smoothstep(wearAmount - 0.05, wearAmount + 0.05, wearMask);
+vec3 wornColor = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.333))), 0.7);
+diffuseColor.rgb = mix(diffuseColor.rgb, wornColor, reveal);
+#endif`
+            );
+          };
+          // Ensure the material updates
+          mat.needsUpdate = true;
+        }
+      }
+      logMeshMaterialState('after wear mask shader (onBeforeCompile)');
     }
   }
 
