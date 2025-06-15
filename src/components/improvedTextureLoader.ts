@@ -12,6 +12,7 @@
  */
 import * as THREE from 'three';
 import { VMATData } from '../vmatParser';
+import { createCSSkinShaderMaterial, updateCSSkinShaderUniforms } from '../shaders/csSkinShader';
 
 export const applyExtractedTexturesToMesh = async (
   mesh: THREE.Mesh | { material: any },
@@ -96,12 +97,63 @@ export const applyExtractedTexturesToMesh = async (
   };
 
 
-
-  // --- PATCH: Robust logic for legacy/full-pattern vs. color-mask skins ---
-  // Only use the color-mask shader if there are at least two unique color slots AND a non-default mask
+  // --- PATCH: Determine the best shader to use for this skin ---
   let usedCustomColorMaskMaterial = false;
   let shouldUseColorMaskShader = false;
-  if (
+  let shouldUseAdvancedSkinShader = false;
+    // Enhanced detection for color-only skins that need masking
+  const isColorOnlySkin = (vmatData && vmatData.parameters && 
+    Array.isArray(vmatData.parameters.colors) && 
+    vmatData.parameters.colors.length > 1 && 
+    !textures['pattern']
+  );
+
+  // --- PATCH: Inject per-weapon mask path for color-only skins if not present ---
+  if (isColorOnlySkin && !textures['mask']) {
+    // Try to generate the correct mask path using the fallback logic
+    // Use the color texture path as a base if available, otherwise fallback to any texture path
+    const basePath = textures['color'] || Object.values(textures)[0] || '';
+    if (basePath) {
+      const maskPath = generateCompositeInputsMaskPath(basePath, vmatData);
+      if (maskPath) {
+        textures['mask'] = maskPath;
+        console.log(`[PATCH] Injected per-weapon mask path for color-only skin: ${maskPath}`);
+      } else {
+        console.warn('[PATCH] Could not generate per-weapon mask path for color-only skin.');
+      }
+    }
+  }
+  
+  // Also check if we have a mask texture available (either directly specified or can be loaded)
+  const hasMaskAvailable = !!(textures['mask']);
+  
+  console.log(`[DEBUG] Color-only skin detection:`, {
+    hasVmatData: !!vmatData,
+    hasColors: !!(vmatData?.parameters?.colors),
+    colorCount: vmatData?.parameters?.colors?.length || 0,
+    hasPattern: !!textures['pattern'],
+    hasMask: hasMaskAvailable,
+    isColorOnly: isColorOnlySkin,
+    textureKeys: Object.keys(textures)
+  });
+  
+  // Check if we should use the advanced CS:GO skin shader
+  if (vmatData && vmatData.parameters) {
+    // Use advanced shader if we have paint style information or multiple textures
+    const hasPaintStyle = typeof vmatData.parameters.paintStyle === 'number';
+    const hasMultipleTextures = Object.keys(textures).length > 1;
+    const hasPattern = !!textures['pattern'];
+    const hasWear = !!textures['wear'] || typeof vmatData.parameters.wearAmount === 'number';
+      if (hasPaintStyle || hasWear || (hasPattern && hasMultipleTextures) || (isColorOnlySkin && hasMaskAvailable)) {
+      shouldUseAdvancedSkinShader = true;
+      console.log('[DEBUG] Using advanced CS:GO skin shader', { 
+        hasPaintStyle, hasWear, hasPattern, hasMultipleTextures, isColorOnlySkin, hasMaskAvailable 
+      });
+    }
+  }
+  
+  // Only use the simple color-mask shader if not using advanced shader
+  if (!shouldUseAdvancedSkinShader &&
     vmatData &&
     vmatData.parameters &&
     Array.isArray(vmatData.parameters.colors) &&
@@ -117,10 +169,77 @@ export const applyExtractedTexturesToMesh = async (
       shouldUseColorMaskShader = true;
     }
   }
-
-  // --- Always prefer pattern texture if present and valid ---
+  // --- Use Advanced CS:GO Skin Shader ---
   let mapAssigned = false;
-  if (textures['pattern']) {
+  if (shouldUseAdvancedSkinShader) {
+    console.log('[DEBUG] Creating advanced CS:GO skin shader material');
+    
+    // Load all available textures
+    const loadedTextures: Record<string, THREE.Texture | null> = {};
+    const textureKeys = ['color', 'pattern', 'normal', 'roughness', 'metalness', 'ao', 'mask', 'wear', 'grunge'];
+    
+    for (const key of textureKeys) {
+      if (textures[key]) {
+        let normalizedPath = textures[key];
+        if (!normalizedPath.startsWith('/')) {
+          normalizedPath = '/' + normalizedPath.replace(/^\\+/, '').replace(/\\/g, '/');
+        }
+        const tex = await loadTextureWithFallbacks(normalizedPath, vmatData, { textureName: key });
+        if (tex) {
+          loadedTextures[key] = tex;
+          console.log(`🖼️ Loaded ${key} texture for shader:`, tex.image ? `${tex.image.width}x${tex.image.height}` : 'No image');        } else if (key === 'mask' && (isColorOnlySkin || hasMaskAvailable)) {
+          // For color-only skins, if mask failed to load, log detailed information
+          console.warn(`⚠️ Failed to load mask texture for color-only skin. This may result in incorrect rendering.`);
+          console.log(`🎭 [Mask Debug] Failed mask loading details:`, {
+            patternName: Object.keys(textures).find(k => textures[k]),
+            maskPath: normalizedPath,
+            isColorOnly: isColorOnlySkin,
+            hasMaskAvailable,
+            vmatColors: vmatData?.parameters?.colors
+          });
+        }
+      }
+    }
+    
+    // Prepare shader parameters from VMAT data
+    const shaderParameters: Record<string, any> = {
+      paintStyle: vmatData?.parameters?.paintStyle || 5, // Default to custom paint
+      paintRoughness: vmatData?.parameters?.paintRoughness || 0.4,
+      wearAmount: wearAmountOverride !== undefined ? wearAmountOverride : (vmatData?.parameters?.wearAmount || 0),
+      patternScale: vmatData?.parameters?.patternScale || 1.0,
+      patternRotation: vmatData?.parameters?.patternRotation || 0.0,
+      colorAdjustment: vmatData?.parameters?.colorAdjustment || 0.0,
+      roughness: vmatData?.parameters?.roughness || 0.8,
+      metalness: vmatData?.parameters?.metalness || 0.1
+    };
+    
+    // Prepare color slots
+    if (vmatData?.parameters?.colors && Array.isArray(vmatData.parameters.colors)) {
+      shaderParameters.colors = vmatData.parameters.colors.map((color: number[]) => [
+        color[0] || 1,
+        color[1] || 1, 
+        color[2] || 1,
+        color[3] || 1
+      ]);
+    }
+    
+    console.log('[DEBUG] Shader parameters:', shaderParameters);
+    
+    // Create the advanced skin shader material
+    const skinShaderMaterial = createCSSkinShaderMaterial(loadedTextures, shaderParameters);
+    
+    // Apply to mesh
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (let i = 0; i < materials.length; ++i) {
+      materials[i] = skinShaderMaterial;
+    }
+    (mesh as any).material = Array.isArray(mesh.material) ? materials : materials[0];
+    
+    console.log('✅ Applied advanced CS:GO skin shader material');
+    logMeshMaterialState('after advanced skin shader');
+    mapAssigned = true;
+    
+  } else if (textures['pattern']) {
     // Assign pattern as main map on a standard material
     const materials = getMaterials();
     for (let i = 0; i < materials.length; ++i) {
@@ -1071,9 +1190,24 @@ export const loadTextureWithFallbacks = async (
   // Only use the direct path method: convert and try only that path
   const directPath = convertVTEXPathToPNG(path);
   const pathsToTry = [directPath];
+  // Enhanced fallback for mask textures - search in composite_inputs folder
+  if (metadata?.textureName === 'mask') {
+    const compositeFallbackPath = generateCompositeInputsMaskPath(directPath, vmatData);
+    if (compositeFallbackPath && compositeFallbackPath !== directPath) {
+      pathsToTry.push(compositeFallbackPath);
+      console.log(`🎭 [Mask Loading] Added composite_inputs fallback path: ${compositeFallbackPath}`);
+    }
+    
+    // Additional debug information for mask loading
+    console.log(`🎭 [Mask Loading] Attempting to load mask texture:`, {
+      originalPath: directPath,
+      fallbackPath: compositeFallbackPath,
+      totalPaths: pathsToTry.length
+    });
+  }
 
-  // Log the path we're trying for debugging
-  console.log(`🔍 Searching for texture: ${directPath}`);
+  // Log the paths we're trying for debugging
+  console.log(`🔍 Searching for texture (${metadata?.textureName || 'unknown'}): ${pathsToTry.join(', ')}`);
 
   // Create a texture loader
   const textureLoader = new THREE.TextureLoader();
@@ -1263,4 +1397,279 @@ export const loadTextureWithFallbacks = async (
   }
   console.log(`❌ All paths failed for texture: ${directPath}`);
   return null;
+};
+
+
+/**
+ * Creates debug controls for the CS:GO skin shader
+ * This function can be called to add UI controls for debugging shader parameters
+ */
+export function createShaderDebugControls(material: THREE.ShaderMaterial): HTMLElement {
+  const container = document.createElement('div');
+  container.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 12px;
+    z-index: 1000;
+    max-width: 300px;
+  `;
+  
+  container.innerHTML = '<h3>CS:GO Shader Debug</h3>';
+  
+  // Helper to create a control
+  const createControl = (label: string, uniformName: string, min: number, max: number, step: number = 0.01) => {
+    const wrapper = document.createElement('div');
+    wrapper.style.marginBottom = '5px';
+    
+    const labelEl = document.createElement('label');
+    labelEl.textContent = `${label}: `;
+    labelEl.style.display = 'inline-block';
+    labelEl.style.width = '120px';
+    
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = min.toString();
+    input.max = max.toString();
+    input.step = step.toString();
+    input.value = material.uniforms[uniformName]?.value?.toString() || '0';
+    input.style.width = '100px';
+    
+    const valueDisplay = document.createElement('span');
+    valueDisplay.textContent = input.value;
+    valueDisplay.style.marginLeft = '5px';
+    valueDisplay.style.width = '40px';
+    valueDisplay.style.display = 'inline-block';
+    
+    input.addEventListener('input', () => {
+      const value = parseFloat(input.value);
+      if (material.uniforms[uniformName]) {
+        material.uniforms[uniformName].value = value;
+        material.uniformsNeedUpdate = true;
+      }
+      valueDisplay.textContent = value.toFixed(2);
+    });
+    
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(input);
+    wrapper.appendChild(valueDisplay);
+    return wrapper;
+  };
+  
+  // Add controls for key parameters
+  container.appendChild(createControl('Paint Style', 'paintStyle', 0, 7, 1));
+  container.appendChild(createControl('Wear Amount', 'wearAmount', 0, 1));
+  container.appendChild(createControl('Pattern Scale', 'patternScale', 0.1, 5));
+  container.appendChild(createControl('Pattern Rotation', 'patternRotation', 0, Math.PI * 2));
+  container.appendChild(createControl('Roughness', 'roughness', 0, 1));
+  container.appendChild(createControl('Metalness', 'metalness', 0, 1));
+  container.appendChild(createControl('Debug Mode', 'debugMode', 0, 4, 1));
+  
+  // Add close button
+  const closeButton = document.createElement('button');
+  closeButton.textContent = 'Close';
+  closeButton.style.cssText = 'margin-top: 10px; width: 100%; padding: 5px;';
+  closeButton.addEventListener('click', () => {
+    container.remove();
+  });
+  container.appendChild(closeButton);
+  
+  return container;
+}
+
+/**
+ * Apply CS:GO skin shader to a mesh with debug controls
+ * This is a convenience function that applies the shader and optionally shows debug controls
+ */
+export async function applyCSGOSkinShaderWithDebug(
+  mesh: THREE.Mesh,
+  textures: Record<string, string>,
+  vmatData: VMATData | null = null,
+  showDebugControls: boolean = false
+): Promise<void> {
+  await applyExtractedTexturesToMesh(mesh, textures, vmatData);
+  
+  if (showDebugControls && mesh.material instanceof THREE.ShaderMaterial) {
+    const debugControls = createShaderDebugControls(mesh.material);
+    document.body.appendChild(debugControls);
+  }
+}
+
+/**
+ * Generate the fallback mask texture path in the composite_inputs folder
+ * @param basePath The base texture path
+ * @param vmatData VMAT data for additional context
+ * @returns The generated fallback path for the mask texture
+ */
+export const generateCompositeInputsMaskPath = (basePath: string, vmatData: VMATData | null): string => {
+  // Extract the pattern name from the base path
+  const patternNameMatch = basePath.match(/\/([^\/]+?)_[^\/]*\.png$/);
+  const patternName = patternNameMatch ? patternNameMatch[1] : '';
+
+  // Weapon name to model folder mapping
+  const weaponModelFolders: Record<string, string> = {
+    // Pistols
+    'glock': 'glock',
+    'hkp2000': 'hkp2000',
+    'usp_silencer': 'usp_silencer',
+    'p250': 'p250',
+    'fiveseven': 'fiveseven',
+    'tec9': 'tec9',
+    'cz75a': 'cz75a',
+    'deagle': 'deagle',
+    'revolver': 'revolver',
+    
+    // SMGs
+    'mac10': 'mac10',
+    'mp9': 'mp9',
+    'mp7': 'mp7',
+    'ump45': 'ump45',
+    'p90': 'p90',
+    'bizon': 'bizon',
+    'mp5sd': 'mp5sd',
+    
+    // Rifles
+    'ak47': 'ak47',
+    'm4a1': 'm4a1',
+    'm4a1_silencer': 'm4a1_silencer',
+    'aug': 'aug',
+    'sg556': 'sg556',
+    'famas': 'famas',
+    'galil': 'galil',
+    
+    // Snipers
+    'awp': 'awp',
+    'ssg08': 'ssg08',
+    'scar20': 'scar20',
+    'g3sg1': 'g3sg1',
+    
+    // Shotguns
+    'nova': 'nova',
+    'xm1014': 'xm1014',
+    'sawedoff': 'sawedoff',
+    'mag7': 'mag7',
+    
+    // Machine guns
+    'm249': 'm249',
+    'negev': 'negev',
+  };
+  // Pattern to weapon mapping (for specific skins)
+  const patternToWeapon: Record<string, string> = {
+    // CZ75-Auto skins - Complete mapping
+    'am_fuschia': 'cz75a',
+    'aq_etched_cz75': 'cz75a',
+    'gs_cz_snakes_purple': 'cz75a',
+    'cu_cz75a_chastizer': 'cz75a',
+    'am_royal': 'cz75a',
+    'am_diamond_plate': 'cz75a',
+    'gs_train_cz75': 'cz75a',
+    'cu_abstract_white_cz': 'cz75a',
+    'cu_cz75_eco': 'cz75a',
+    'cu_c75a-tiger': 'cz75a',
+    'cz75_tacticat': 'cz75a',
+    'cu_cz75_precision': 'cz75a',
+    'gs_cz75a_redastor': 'cz75a',
+    'cu_cz75_whirlwind': 'cz75a',
+    'am_czv2_mf': 'cz75a',
+    'gs_cz75_tread': 'cz75a',
+    'cu_cz75_cerakote': 'cz75a',
+    'an_silver': 'cz75a', // Note: shared across weapons
+    'am_carbon_fiber': 'cz75a', // Note: shared across weapons
+    'sp_palm_night': 'cz75a',
+    'hy_plaid2': 'cz75a',
+    'am_army_shine': 'cz75a',
+    'so_indigo_and_grey': 'cz75a',
+    'sp_tape_short_jungle': 'cz75a',
+    'soe_pink_pearl': 'cz75a',
+    'hy_vertigoillusion': 'cz75a',
+    
+    // AK-47 skins
+    'cu_ak47_asiimov': 'ak47',
+    'cu_ak47_bloodsport': 'ak47',
+    'cu_ak47_inheritance': 'ak47',
+    
+    // AWP skins
+    'cu_medieval_dragon_awp': 'awp',
+    'am_lightning_awp': 'awp',
+    
+    // Glock skins
+    'aa_fade_glock': 'glock',
+    'cu_glock_18_wasteland_princess': 'glock',
+    
+    // Add more pattern mappings as needed...
+  };
+
+  // Weapon model folder mappings for mask file names
+  const weaponMaskNames: Record<string, string> = {
+    'cz75a': 'weapon_pist_cz75a_masks',
+    'glock': 'weapon_pist_glock18_masks',
+    'hkp2000': 'weapon_pist_hkp2000_masks',
+    'usp_silencer': 'weapon_pist_223_masks',
+    'p250': 'weapon_pist_p250_masks',
+    'fiveseven': 'weapon_pist_fiveseven_masks',
+    'tec9': 'weapon_pist_tec9_masks',
+    'deagle': 'weapon_pist_deagle_masks',
+    'revolver': 'weapon_pist_revolver_masks',
+    
+    'mac10': 'weapon_smg_mac10_masks',
+    'mp9': 'weapon_smg_mp9_masks',
+    'mp7': 'weapon_smg_mp7_masks',
+    'ump45': 'weapon_smg_ump45_masks',
+    'p90': 'weapon_smg_p90_masks',
+    'bizon': 'weapon_smg_bizon_masks',
+    'mp5sd': 'weapon_smg_mp5sd_masks',
+    
+    'ak47': 'weapon_rif_ak47_masks',
+    'm4a1': 'weapon_rif_m4a1_masks',
+    'm4a1_silencer': 'weapon_rif_m4a1_silencer_masks',
+    'aug': 'weapon_rif_aug_masks',
+    'sg556': 'weapon_rif_sg556_masks',
+    'famas': 'weapon_rif_famas_masks',
+    'galil': 'weapon_rif_galilar_masks',
+    
+    'awp': 'weapon_snp_awp_masks',
+    'ssg08': 'weapon_snp_ssg08_masks',
+    'scar20': 'weapon_snp_scar20_masks',
+    'g3sg1': 'weapon_snp_g3sg1_masks',
+    
+    'nova': 'weapon_sht_nova_masks',
+    'xm1014': 'weapon_sht_xm1014_masks',
+    'sawedoff': 'weapon_sht_sawedoff_masks',
+    'mag7': 'weapon_sht_mag7_masks',
+    
+    'm249': 'weapon_mch_m249_masks',
+    'negev': 'weapon_mch_negev_masks'
+  };
+
+  // Determine weapon from pattern name
+  let weaponName = patternToWeapon[patternName];
+  
+  // If no direct mapping, try to extract weapon from pattern name
+  if (!weaponName) {
+    // Try common prefixes/suffixes in pattern names
+    for (const [weapon, folder] of Object.entries(weaponModelFolders)) {
+      if (patternName.includes(weapon)) {
+        weaponName = weapon;
+        break;
+      }
+    }
+  }
+
+  // Generate the path using the new structure
+  if (weaponName && weaponModelFolders[weaponName] && weaponMaskNames[weaponName]) {
+    const modelFolder = weaponModelFolders[weaponName];
+    const maskFileName = weaponMaskNames[weaponName];
+    const maskPath = `/materials/_PreviewMaterials/materials/weapons/models/${modelFolder}/materials/composite_inputs/${maskFileName}.png`;
+    console.log(`[Mask Loading] Generated mask path for ${patternName}: ${maskPath}`);
+    return maskPath;
+  }
+
+  // Fallback to old structure if no mapping found
+  console.warn(`[Mask Loading] No weapon mapping found for pattern: ${patternName}, using fallback path`);
+  return `/materials/_PreviewMaterials/materials/models/weapons/customization/paints/composite_inputs/${patternName}_mask.png`;
 };
