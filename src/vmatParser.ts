@@ -41,6 +41,7 @@ export interface VMATData {
 		// Allow other parameters
 		[key: string]: any;
 	};
+	filePath?: string;
 }
 
 /**

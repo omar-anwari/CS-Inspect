@@ -420,20 +420,52 @@ const WeaponModel: React.FC<{
         let meshCount = 0;
         scene.traverse((child: THREE.Object3D) => {
           if (child instanceof THREE.Mesh) {
-            meshCount++;
-            (async () => {
+            meshCount++;            (async () => {
               try {
+                // Validate mesh before applying textures
+                if (!child.geometry || child.geometry.attributes.position?.count === 0) {
+                  console.warn(`⚠️ Mesh ${child.name} has no valid geometry, skipping texture application`);
+                  return;
+                }
+                
+                // Apply a temporary visible material while loading
+                if (!child.material || child.material.visible === false) {
+                  child.material = new THREE.MeshStandardMaterial({
+                    color: new THREE.Color(0x666666),
+                    roughness: 0.5,
+                    metalness: 0.3,
+                    visible: true
+                  });
+                }
+                
                 // Pass the wear value from the API (itemData?.floatvalue) to the texture loader
                 await applyExtractedTexturesToMesh(child, textures, materialData, itemData?.floatvalue);
-                // --- Make normal map even more intense if present ---
-                if (child.material && 'normalMap' in child.material && child.material.normalMap) {
-                  // Dramatically increase normalScale
-                  child.material.normalScale = new THREE.Vector2(1, 1);
+                
+                // Ensure the mesh is still visible after material application
+                if (child.material) {
+                  child.material.visible = true;
                   child.material.needsUpdate = true;
+                  
+                  // --- Make normal map even more intense if present ---
+                  if ('normalMap' in child.material && child.material.normalMap) {
+                    // Dramatically increase normalScale
+                    (child.material as any).normalScale = new THREE.Vector2(1, 1);
+                    child.material.needsUpdate = true;
+                  }
                 }
+                
                 console.log(`✅ [applyExtractedTexturesToMesh] Applied to mesh: ${child.name}`);
               } catch (err) {
                 console.error(`❌ Error in applyExtractedTexturesToMesh for mesh ${child.name}:`, err);
+                
+                // Apply a visible fallback material if texture application fails
+                child.material = new THREE.MeshStandardMaterial({
+                  color: new THREE.Color(0x996666), // Reddish to indicate error
+                  roughness: 0.6,
+                  metalness: 0.2,
+                  visible: true
+                });
+                console.log(`🔧 Applied error fallback material to mesh: ${child.name}`);
               }
             })();
           }

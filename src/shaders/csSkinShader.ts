@@ -99,6 +99,17 @@ uniform float roughness;
 // Debug
 uniform float debugMode;
 
+// Texture validity flags
+uniform float hasColorTexture;
+uniform float hasPatternTexture;
+uniform float hasNormalTexture;
+uniform float hasRoughnessTexture;
+uniform float hasMetalnessTexture;
+uniform float hasAoTexture;
+uniform float hasMaskTexture;
+uniform float hasWearTexture;
+uniform float hasGrungeTexture;
+
 // Varying inputs
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -114,6 +125,14 @@ varying vec3 vViewPosition;
 #define PAINT_STYLE_CUSTOM_PAINT 5.0
 #define PAINT_STYLE_ANTIQUED 6.0
 #define PAINT_STYLE_GUNSMITH 7.0
+
+// Safe texture sampling
+vec4 sampleTexture(sampler2D tex, vec2 uv, float hasTexture, vec4 defaultValue) {
+  if (hasTexture > 0.5) {
+    return texture2D(tex, uv);
+  }
+  return defaultValue;
+}
 
 // Utility functions
 vec2 rotateUV(vec2 uv, float angle) {
@@ -147,13 +166,6 @@ vec3 blendSoftLight(vec3 base, vec3 overlay) {
   );
 }
 
-// Color adjustment functions
-vec3 adjustHue(vec3 color, float hueShift) {
-  const vec3 k = vec3(0.57735, 0.57735, 0.57735);
-  float cosAngle = cos(hueShift);
-  return color * cosAngle + cross(k, color) * sin(hueShift) + k * dot(k, color) * (1.0 - cosAngle);
-}
-
 vec3 adjustSaturation(vec3 color, float saturation) {
   float gray = dot(color, vec3(0.299, 0.587, 0.114));
   return mix(vec3(gray), color, saturation);
@@ -167,12 +179,12 @@ vec4 compositeSkin() {
   vec2 patternUV = (uv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
   patternUV = rotateUV(patternUV, patternRotation);
   
-  // Sample base textures
-  vec4 baseColor = texture2D(colorTexture, uv);
-  vec4 pattern = texture2D(patternTexture, patternUV);
-  vec4 mask = texture2D(maskTexture, uv);
-  vec4 wear = texture2D(wearTexture, uv);
-  vec4 grunge = texture2D(grungeTexture, uv);
+  // Sample base textures with fallbacks
+  vec4 baseColor = sampleTexture(colorTexture, uv, hasColorTexture, vec4(0.8, 0.8, 0.8, 1.0));
+  vec4 pattern = sampleTexture(patternTexture, patternUV, hasPatternTexture, vec4(1.0, 1.0, 1.0, 1.0));
+  vec4 mask = sampleTexture(maskTexture, uv, hasMaskTexture, vec4(0.0, 0.0, 0.0, 1.0));
+  vec4 wear = sampleTexture(wearTexture, uv, hasWearTexture, vec4(0.0, 0.0, 0.0, 1.0));
+  vec4 grunge = sampleTexture(grungeTexture, uv, hasGrungeTexture, vec4(0.0, 0.0, 0.0, 1.0));
   
   // Initialize output color
   vec3 finalColor = baseColor.rgb;
@@ -206,9 +218,11 @@ vec4 compositeSkin() {
     
     // Use mask channels to blend colors
     vec3 blendedColor = color1;
-    blendedColor = mix(blendedColor, color2, mask.r);
-    blendedColor = mix(blendedColor, color3, mask.g);
-    blendedColor = mix(blendedColor, color4, mask.b);
+    if (hasMaskTexture > 0.5) {
+      blendedColor = mix(blendedColor, color2, mask.r);
+      blendedColor = mix(blendedColor, color3, mask.g);
+      blendedColor = mix(blendedColor, color4, mask.b);
+    }
     
     finalColor = blendMultiply(blendedColor, pattern.rgb);
     
@@ -230,13 +244,16 @@ vec4 compositeSkin() {
   }
   
   // Apply wear effects
-  if (wearAmount > 0.0) {
+  if (wearAmount > 0.0 && hasWearTexture > 0.5) {
     // Wear removes paint, revealing base material
     float wearMask = wear.r * wearAmount;
     wearMask = smoothstep(0.0, 1.0, wearMask);
     
     // Add grunge for realistic wear patterns
-    float grungeMask = grunge.r * wearAmount * 0.5;
+    float grungeMask = 0.0;
+    if (hasGrungeTexture > 0.5) {
+      grungeMask = grunge.r * wearAmount * 0.5;
+    }
     wearMask = max(wearMask, grungeMask);
     
     // Blend back to base color based on wear
@@ -258,24 +275,24 @@ void main() {
   
   // Sample material property textures
   vec3 normal = normalize(vNormal);
-  if (length(texture2D(normalTexture, vUv).rgb) > 0.1) {
+  if (hasNormalTexture > 0.5) {
     vec3 normalMap = texture2D(normalTexture, vUv).rgb * 2.0 - 1.0;
     // Simple normal mapping (could be improved with tangent space)
     normal = normalize(normal + normalMap * 0.5);
   }
   
   float materialRoughness = roughness;
-  if (length(texture2D(roughnessTexture, vUv).rgb) > 0.1) {
+  if (hasRoughnessTexture > 0.5) {
     materialRoughness *= texture2D(roughnessTexture, vUv).r;
   }
   
   float materialMetalness = metalness;
-  if (length(texture2D(metalnessTexture, vUv).rgb) > 0.1) {
+  if (hasMetalnessTexture > 0.5) {
     materialMetalness *= texture2D(metalnessTexture, vUv).r;
   }
   
   float ao = 1.0;
-  if (length(texture2D(aoTexture, vUv).rgb) > 0.1) {
+  if (hasAoTexture > 0.5) {
     ao = texture2D(aoTexture, vUv).r;
   }
   
@@ -293,16 +310,21 @@ void main() {
   
   vec3 finalColor = diffuse + specular;
   
-  // Debug modes
+  // Debug modes - sample textures directly for debug visualization
   if (debugMode == 1.0) {
     // Show pattern texture
-    finalColor = texture2D(patternTexture, vUv).rgb;
+    vec2 patternUV = (vUv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
+    patternUV = rotateUV(patternUV, patternRotation);
+    vec4 patternDebug = sampleTexture(patternTexture, patternUV, hasPatternTexture, vec4(1.0, 0.0, 1.0, 1.0));
+    finalColor = patternDebug.rgb;
   } else if (debugMode == 2.0) {
     // Show mask texture
-    finalColor = texture2D(maskTexture, vUv).rgb;
+    vec4 maskDebug = sampleTexture(maskTexture, vUv, hasMaskTexture, vec4(1.0, 0.0, 1.0, 1.0));
+    finalColor = maskDebug.rgb;
   } else if (debugMode == 3.0) {
     // Show wear texture
-    finalColor = texture2D(wearTexture, vUv).rgb;
+    vec4 wearDebug = sampleTexture(wearTexture, vUv, hasWearTexture, vec4(1.0, 0.0, 1.0, 1.0));
+    finalColor = wearDebug.rgb;
   } else if (debugMode == 4.0) {
     // Show UV coordinates
     finalColor = vec3(vUv, 0.0);
@@ -332,8 +354,21 @@ export function createCSSkinShaderMaterial(
     return texture;
   };
   
+  // Create texture validity flags
+  const textureFlags: Record<string, THREE.IUniform> = {
+    hasColorTexture: { value: textures.color ? 1.0 : 0.0 },
+    hasPatternTexture: { value: textures.pattern ? 1.0 : 0.0 },
+    hasNormalTexture: { value: textures.normal ? 1.0 : 0.0 },
+    hasRoughnessTexture: { value: textures.roughness ? 1.0 : 0.0 },
+    hasMetalnessTexture: { value: textures.metalness ? 1.0 : 0.0 },
+    hasAoTexture: { value: textures.ao ? 1.0 : 0.0 },
+    hasMaskTexture: { value: textures.mask ? 1.0 : 0.0 },
+    hasWearTexture: { value: textures.wear ? 1.0 : 0.0 },
+    hasGrungeTexture: { value: textures.grunge ? 1.0 : 0.0 }
+  };
+  
   const uniforms: Record<string, THREE.IUniform> = {
-    // Textures
+    // Textures - use null for missing textures, shader will handle it
     colorTexture: { value: textures.color || createDefaultTexture([0.8, 0.8, 0.8, 1]) },
     patternTexture: { value: textures.pattern || createDefaultTexture([1, 1, 1, 1]) },
     normalTexture: { value: textures.normal || createDefaultTexture([0.5, 0.5, 1, 1]) },
@@ -345,6 +380,9 @@ export function createCSSkinShaderMaterial(
     grungeTexture: { value: textures.grunge || createDefaultTexture([0, 0, 0, 1]) },
     glitterNormalTexture: { value: textures.glitterNormal || createDefaultTexture([0.5, 0.5, 1, 1]) },
     glitterMaskTexture: { value: textures.glitterMask || createDefaultTexture([0, 0, 0, 1]) },
+    
+    // Texture validity flags
+    ...textureFlags,
     
     // Material parameters
     paintStyle: { value: parameters.paintStyle || 5.0 }, // Default to custom paint
@@ -395,7 +433,7 @@ export function createCSSkinShaderMaterial(
     uniforms,
     vertexShader,
     fragmentShader,
-    transparent: true,
+    transparent: false,
     side: THREE.DoubleSide
   });
   
@@ -409,11 +447,55 @@ export function updateCSSkinShaderUniforms(
   material: THREE.ShaderMaterial,
   updates: Partial<CSSkinShaderUniforms>
 ): void {
-  Object.entries(updates).forEach(([key, value]) => {
-    if (material.uniforms[key]) {
-      material.uniforms[key].value = value;
+  if (!material.uniforms) return;
+  
+  // Update simple values
+  const simpleUniforms = [
+    'paintStyle', 'paintRoughness', 'wearAmount', 'patternScale',
+    'patternRotation', 'colorAdjustment', 'metalness', 'roughness', 'debugMode'
+  ];
+  
+  simpleUniforms.forEach(key => {
+    if (key in updates && material.uniforms[key]) {
+      material.uniforms[key].value = updates[key as keyof CSSkinShaderUniforms];
     }
   });
+  
+  // Update textures
+  const textureUniforms = [
+    'colorTexture', 'patternTexture', 'normalTexture', 'roughnessTexture',
+    'metalnessTexture', 'aoTexture', 'maskTexture', 'wearTexture',
+    'grungeTexture', 'glitterNormalTexture', 'glitterMaskTexture'
+  ];
+  
+  textureUniforms.forEach(key => {
+    if (key in updates && material.uniforms[key]) {
+      material.uniforms[key].value = updates[key as keyof CSSkinShaderUniforms];
+      // Update validity flag
+      const flagKey = `has${key.charAt(0).toUpperCase() + key.slice(1)}`;
+      if (material.uniforms[flagKey]) {
+        material.uniforms[flagKey].value = updates[key as keyof CSSkinShaderUniforms] ? 1.0 : 0.0;
+      }
+    }
+  });
+  
+  // Update colors array
+  if (updates.colors && Array.isArray(updates.colors)) {
+    updates.colors.forEach((color, i) => {
+      if (i < 4 && material.uniforms.colors.value[i]) {
+        material.uniforms.colors.value[i].copy(color);
+      }
+    });
+  }
+  
+  // Update vector uniforms
+  if (updates.patternOffset && material.uniforms.patternOffset) {
+    material.uniforms.patternOffset.value.copy(updates.patternOffset);
+  }
+  
+  if (updates.patternTiling && material.uniforms.patternTiling) {
+    material.uniforms.patternTiling.value.copy(updates.patternTiling);
+  }
   
   material.uniformsNeedUpdate = true;
 }
