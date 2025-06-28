@@ -18,6 +18,7 @@ import {
 } from '../utils/itemsGameParser';
 import { parseVMAT, parseVCOMPMAT, VMATData } from '../vmatParser';
 import * as THREE from 'three';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 // Sometimes Three.js just gives up and I don't want the whole thing to die
 class ErrorBoundary extends Component<
@@ -158,20 +159,14 @@ const WeaponModel: React.FC<{
 
       // Remove all materials from the model before loading new ones
       scene.traverse((child: THREE.Object3D) => {
-        if (child instanceof THREE.Mesh && child.material) {
-          // Dispose of the old material if possible
-          if (Array.isArray(child.material)) {
-            child.material.forEach(mat => {
-              if (mat && typeof mat.dispose === 'function') mat.dispose();
-            });
-          } else if (typeof child.material.dispose === 'function') {
-            child.material.dispose();
+        if (child instanceof THREE.Mesh && child.geometry) {
+          const geometry = child.geometry;
+          if (geometry.hasAttribute('uv') && geometry.hasAttribute('normal')) {
+            geometry.computeTangents();
+            console.log(`✅ Computed tangents for mesh: ${child.name}`);
+          } else {
+            console.warn(`⚠️ Mesh ${child.name} lacks UV or normal attributes, cannot compute tangents.`);
           }
-          child.material = new THREE.MeshStandardMaterial({
-            color: 0x888888,
-            roughness: 0.5,
-            metalness: 0.7
-          });
         }
       });
 
@@ -420,14 +415,14 @@ const WeaponModel: React.FC<{
         let meshCount = 0;
         scene.traverse((child: THREE.Object3D) => {
           if (child instanceof THREE.Mesh) {
-            meshCount++;            (async () => {
+            meshCount++; (async () => {
               try {
                 // Validate mesh before applying textures
                 if (!child.geometry || child.geometry.attributes.position?.count === 0) {
                   console.warn(`⚠️ Mesh ${child.name} has no valid geometry, skipping texture application`);
                   return;
                 }
-                
+
                 // Apply a temporary visible material while loading
                 if (!child.material || child.material.visible === false) {
                   child.material = new THREE.MeshStandardMaterial({
@@ -437,15 +432,15 @@ const WeaponModel: React.FC<{
                     visible: true
                   });
                 }
-                
+
                 // Pass the wear value from the API (itemData?.floatvalue) to the texture loader
                 await applyExtractedTexturesToMesh(child, textures, materialData, itemData?.floatvalue);
-                
+
                 // Ensure the mesh is still visible after material application
                 if (child.material) {
                   child.material.visible = true;
                   child.material.needsUpdate = true;
-                  
+
                   // --- Make normal map even more intense if present ---
                   if ('normalMap' in child.material && child.material.normalMap) {
                     // Dramatically increase normalScale
@@ -453,11 +448,11 @@ const WeaponModel: React.FC<{
                     child.material.needsUpdate = true;
                   }
                 }
-                
+
                 console.log(`✅ [applyExtractedTexturesToMesh] Applied to mesh: ${child.name}`);
               } catch (err) {
                 console.error(`❌ Error in applyExtractedTexturesToMesh for mesh ${child.name}:`, err);
-                
+
                 // Apply a visible fallback material if texture application fails
                 child.material = new THREE.MeshStandardMaterial({
                   color: new THREE.Color(0x996666), // Reddish to indicate error

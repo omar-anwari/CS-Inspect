@@ -228,6 +228,34 @@ export const applyExtractedTexturesToMesh = async (
             if (tex) {
               loadedTextures[key] = tex;
               console.log(`🖼️ Loaded ${key} texture for shader:`, tex.image ? `${tex.image.width}x${tex.image.height}` : 'No image');
+              
+              // Special handling for normal maps
+              if (key === 'normal' && tex) {
+                // Normal maps should not have color space conversion
+                // Use colorSpace for modern Three.js (r152+)
+                if ('colorSpace' in tex) {
+                  // For normal maps, use NoColorSpace (no color space conversion)
+                  (tex as any).colorSpace = (THREE as any).NoColorSpace;
+                }
+                // Note: encoding property no longer exists in modern Three.js
+                // so we don't need the else clause
+                
+                tex.minFilter = THREE.LinearMipMapLinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.RepeatWrapping;
+                
+                // Copy UV transform from pattern texture if available
+                if (loadedTextures.pattern) {
+                  tex.repeat.copy(loadedTextures.pattern.repeat);
+                  tex.offset.copy(loadedTextures.pattern.offset);
+                  tex.rotation = loadedTextures.pattern.rotation;
+                  tex.center.copy(loadedTextures.pattern.center);
+                }
+                
+                tex.needsUpdate = true;
+                console.log(`🎨 Applied normal map settings with pattern UV transform`);
+              }
             } else if (key === 'mask' && (isColorOnlySkin || hasMaskAvailable)) {
               // For color-only skins, if mask failed to load, log detailed information
               console.warn(`⚠️ Failed to load mask texture for color-only skin. This may result in incorrect rendering.`);
