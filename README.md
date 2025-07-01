@@ -17,9 +17,10 @@ This is my bummy 3D inspect tool. You can input throw in an inspect link and see
 - [x] I broke textures again
   - It's sort of working, need to fix masks, colours, etc
 - [ ] Gotta figure out stickers
-- [ ] Figure out how to simulate float
+- [x] Figure out how to simulate float
+  - It's sort of working, broke normals in the process
 - [ ] Figure out how to replicate patterns
-- [ ] Figure out how to rip directly from the game
+- [ ] Figure out how to rip directly from the game (maybe)
 
 ## Getting Started
 Clone the repo, install dependencies, and run the development server:
