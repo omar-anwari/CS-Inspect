@@ -283,7 +283,11 @@ export async function parseVMAT(filePath: string): Promise<VMATData> {
 				rawTextures.TextureColor1
 			),
 			wearPath: normalizeTexturePath(
-				compiledTextures.g_tWear || rawTextures.Wear || rawTextures.TextureWear
+				compiledTextures.g_tWear || 
+				rawTextures.Wear || 
+				rawTextures.TextureWear ||
+				rawTextures.TextureWearMask ||
+				rawTextures.g_tWear
 			),
 			maskPath: normalizeTexturePath(
 				compiledTextures.g_tMasks ||
@@ -394,21 +398,46 @@ export const parseVCOMPMAT = (vcompmatContent: string): VMATData => {
 	};
 
 	try {
-		// Extract all resource_name:"...vtex" paths
+		// First, try to extract from m_vecLooseVariables section
+		const looseVariablesRegex = /m_vecLooseVariables\s*=\s*\[([\s\S]*?)\]/g;
+		let looseVarsMatch;
+		
+		while ((looseVarsMatch = looseVariablesRegex.exec(vcompmatContent)) !== null) {
+			const looseVarsContent = looseVarsMatch[1];
+			
+			// Look for g_tWear specifically in loose variables
+			const wearRegex = /m_strName\s*=\s*"g_tWear"[\s\S]*?m_strTextureRuntimeResourcePath\s*=\s*resource_name:"([^"]+)"/;
+			const wearMatch = wearRegex.exec(looseVarsContent);
+			
+			if (wearMatch) {
+				const vtexPath = wearMatch[1];
+				const pngPath = vtexPath ? normalizeTexturePath(vtexPath.replace(/\.vtex$/, '.png')) : undefined;
+				if (pngPath) {
+					result.wearPath = pngPath;
+					console.log(`✅ Found wear texture in loose variables: ${pngPath}`);
+				}
+			}
+		}
+
+		// Existing resource_name extraction code...
 		const resourceRegex = /m_strName\s*=\s*"(g_t\w+)"[\s\S]*?m_strTextureRuntimeResourcePath\s*=\s*resource_name:"([^"\s]+\.vtex)"/g;
 
 		let match;
-		// Track which slot is assigned for main texture
 		let mainTextureAssigned = false;
 		while ((match = resourceRegex.exec(vcompmatContent)) !== null) {
 			const texName = match[1];
 			const vtexPath = match[2];
-			// Convert .vtex to .png and normalize
 			const pngPath = vtexPath ? normalizeTexturePath(vtexPath.replace(/\.vtex$/, '.png')) : undefined;
 			if (!pngPath) continue;
 
 			const texNameLower = texName.toLowerCase();
 
+			// Handle wear texture if found in regular texture definitions
+			if (texNameLower.includes('wear') && !result.wearPath) {
+				result.wearPath = pngPath;
+				console.log(`✅ Found wear texture in regular definitions: ${pngPath}`);
+			}
+			
 			// Prioritize albedo/basecolor/color for main texture assignment
 			if (!mainTextureAssigned && (texNameLower.includes('albedo') || texNameLower.includes('basecolor') || texNameLower.includes('color'))) {
 				result.colorPath = pngPath;

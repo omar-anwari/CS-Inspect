@@ -105,6 +105,7 @@ uniform float wearAmount;
 uniform float patternScale;
 uniform float patternRotation;
 uniform float colorAdjustment;
+uniform float colorBrightness;
 
 // Color slots
 uniform vec4 colors[4];
@@ -146,6 +147,7 @@ uniform vec4 paintDurability;
 #define PAINT_STYLE_CUSTOM_PAINT 5.0
 #define PAINT_STYLE_ANTIQUED 6.0
 #define PAINT_STYLE_GUNSMITH 7.0
+#define PAINT_STYLE_PEARLESCENT 8.0
 
 // Safe texture sampling
 vec4 sampleTexture(sampler2D tex, vec2 uv, float hasTexture, vec4 defaultValue) {
@@ -207,25 +209,37 @@ float calculateWearMask(vec2 uv, float wearAmount) {
 
   float wearSample = texture2D(wearTexture, wearUV).r;
 
-  float wearCurve = pow(remappedWearAmount, 1.5);
-  float wearThreshold = wearCurve;
-
-  float remappedWear = 1.0 - wearSample;
-
+  // Don't invert the wear sample - use it directly
+  // In CS:GO wear textures: white = areas that wear first, black = areas that resist wear
+  float wearValue = wearSample;
+  
+  // Create wear threshold based on wear amount
+  // Higher wear amount = more areas affected by wear
+  float wearThreshold = remappedWearAmount;
+  
+  // Calculate wear mask with soft edges
   float softness = wearSoftness > 0.0 ? wearSoftness : 0.15;
   float wearMask = smoothstep(
     wearThreshold - softness,
     wearThreshold + softness,
-    remappedWear
+    wearValue
   );
 
-  if (remappedWearAmount < 0.07) {
-    wearMask *= remappedWearAmount * 10.0;
+  // Scale wear effect based on wear amount ranges
+  if (remappedWearAmount < 0.01) {
+    // Factory new - no wear at all
+    return 0.0;
+  } else if (remappedWearAmount < 0.07) {
+    // Minimal wear - very subtle
+    wearMask *= 0.5;
   } else if (remappedWearAmount < 0.15) {
-    wearMask *= 0.7 + (remappedWearAmount - 0.07) * 2.5;
+    // Field tested - moderate wear
+    wearMask *= 0.75;
   } else if (remappedWearAmount < 0.38) {
-    wearMask *= 0.9 + (remappedWearAmount - 0.15) * 0.43;
+    // Well worn - significant wear
+    wearMask *= 0.9;
   }
+  // Battle scarred gets full wear
 
   return clamp(wearMask, 0.0, 1.0);
 }
@@ -301,28 +315,36 @@ vec4 compositeSkin() {
     // Gunsmith: metallic with subtle pattern
     vec3 metallicColor = colors[0].rgb;
     paintColor = mix(metallicColor, blendScreen(metallicColor, pattern.rgb), 0.3);
+  } else {
+    // Fallback for unknown paint styles (like style 8)
+    // Use pattern with first color slot
+    paintColor = pattern.rgb * colors[0].rgb;
   }
   
   // Calculate wear mask
   float wearMask = calculateWearMask(uv, wearAmount);
   
-  // Apply wear by revealing base material under the paint
+  // Apply wear by revealing base material underneath paint
   if (wearMask > 0.0) {
-    // The base/unpainted material - make it more contrasting
-    // Use a lighter base for better visibility of wear
-    vec3 baseMaterial = baseColor.rgb * 0.4; // Increased from 0.3 for lighter base
+    // Base material color - darker gunmetal/steel
+    vec3 baseMaterial = vec3(0.25, 0.25, 0.25);
     
-    // Add some color variation to the base material for realism
-    baseMaterial = mix(baseMaterial, vec3(0.3, 0.28, 0.25), 0.5); // Slight brown/rust tint
+    // Add slight variation based on base color
+    baseMaterial = mix(baseMaterial, baseColor.rgb * 0.4, 0.3);
     
     // Add grunge for more realistic wear patterns
     if (hasGrungeTexture > 0.5) {
-      float grungeMask = grunge.r * wearAmount * 0.5; // Increased from 0.3
+      float grungeMask = grunge.r * wearAmount * 0.3;
       wearMask = max(wearMask, grungeMask);
     }
     
-    // Blend between painted and base material based on wear
-    finalColor = mix(baseMaterial, paintColor, wearMask);
+    // Blend from paint to base material based on wear
+    finalColor = mix(paintColor, baseMaterial, wearMask);
+    
+    // IMPORTANT: DO NOT modify alpha channel
+    // The wear should only affect the color, not make the model transparent
+    // finalAlpha remains unchanged
+    
   } else {
     finalColor = paintColor;
   }
@@ -332,6 +354,9 @@ vec4 compositeSkin() {
     finalColor = adjustSaturation(finalColor, 1.0 + colorAdjustment * 0.5);
   }
   
+  // Apply color brightness
+  finalColor *= colorBrightness;
+
   return vec4(finalColor, finalAlpha);
 }
 
@@ -361,19 +386,21 @@ void main() {
   // Calculate wear mask for material properties
   float wearMask = calculateWearMask(vUv, wearAmount);
 
-  // Roughness increases with wear - make the difference more pronounced
+  // Roughness increases with wear - worn areas are less polished
   float materialRoughness = roughness;
   if (hasRoughnessTexture > 0.5) {
     materialRoughness *= texture2D(roughnessTexture, vUv).r;
   }
-  materialRoughness = mix(materialRoughness, 0.98, wearMask * 0.8);
+  // Worn areas should be much rougher (less shiny)
+  materialRoughness = mix(materialRoughness, 0.95, wearMask);
 
-  // Metalness changes with wear
+  // Metalness changes with wear - exposed metal underneath
   float materialMetalness = metalness;
   if (hasMetalnessTexture > 0.5) {
     materialMetalness *= texture2D(metalnessTexture, vUv).r;
   }
-  materialMetalness = mix(materialMetalness, 0.6, wearMask);
+  // Worn areas show more raw metal
+  materialMetalness = mix(materialMetalness, 0.8, wearMask);
 
   float ao = 1.0;
   if (hasAoTexture > 0.5) {
@@ -388,9 +415,9 @@ void main() {
   vec3 reflectDir = reflect(-lightDir, normal);
   float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0 + (1.0 - materialRoughness) * 48.0);
 
-  vec3 ambient = skinColor.rgb * 0.6;
-  vec3 diffuse = skinColor.rgb * NdotL * 0.7;
-  vec3 specular = vec3(spec) * materialMetalness * 0.3;
+  vec3 ambient = skinColor.rgb * mix(0.6, 0.5, wearMask); // Darker ambient in worn areas
+  vec3 diffuse = skinColor.rgb * NdotL * mix(0.7, 0.8, wearMask); // Slightly brighter diffuse
+  vec3 specular = vec3(spec) * materialMetalness * mix(0.3, 0.5, wearMask); // More specular on worn metal
 
   vec3 finalColor = (ambient + diffuse) * ao + specular;
 
@@ -485,6 +512,7 @@ export function createCSSkinShaderMaterial(
     patternScale: { value: parameters.patternScale || 1.0 },
     patternRotation: { value: parameters.patternRotation || 0.0 },
     colorAdjustment: { value: parameters.colorAdjustment || 0.0 },
+    colorBrightness: { value: parameters.colorBrightness || 1.0 },
 
     // Color slots
     colors: {
@@ -527,9 +555,10 @@ export function createCSSkinShaderMaterial(
     uniforms,
     vertexShader,
     fragmentShader,
-    transparent: false,
+    transparent: false, // Changed back to false - we don't want transparency
     side: THREE.DoubleSide,
-    lights: false // Set to true if you want Three.js lighting
+    lights: false
+    // Removed alphaTest since we're not using transparency
   });
 
   return material;

@@ -218,6 +218,27 @@ export const applyExtractedTexturesToMesh = async (
           'noPaint', 'paintMetalness', 'paintRoughness', 'glitterNormal', 'glitterMask'
         ];
 
+        // In applyExtractedTexturesToMesh function, around line 230:
+        // Ensure wear texture is loaded from VMAT/VCOMPMAT data
+        if (vmatData?.wearPath && !textures['wear']) {
+          textures['wear'] = vmatData.wearPath;
+          console.log(`[DEBUG] Using wear texture from VMAT/VCOMPMAT: ${vmatData.wearPath}`);
+        }
+
+        // Load wear texture
+        if (textures['wear']) {
+          loadedTextures['wear'] = await loadTextureWithFallbacks(
+            textures['wear'],
+            vmatData,
+            { textureName: 'wear' }
+          );
+          if (loadedTextures['wear']) {
+            console.log('✅ Loaded wear texture successfully');
+          } else {
+            console.warn('⚠️ Failed to load wear texture');
+          }
+        }
+
         for (const key of textureKeys) {
           if (textures[key]) {
             let normalizedPath = textures[key];
@@ -228,7 +249,7 @@ export const applyExtractedTexturesToMesh = async (
             if (tex) {
               loadedTextures[key] = tex;
               console.log(`🖼️ Loaded ${key} texture for shader:`, tex.image ? `${tex.image.width}x${tex.image.height}` : 'No image');
-              
+
               // Special handling for normal maps
               if (key === 'normal' && tex) {
                 // Normal maps should not have color space conversion
@@ -239,12 +260,12 @@ export const applyExtractedTexturesToMesh = async (
                 }
                 // Note: encoding property no longer exists in modern Three.js
                 // so we don't need the else clause
-                
+
                 tex.minFilter = THREE.LinearMipMapLinearFilter;
                 tex.magFilter = THREE.LinearFilter;
                 tex.wrapS = THREE.RepeatWrapping;
                 tex.wrapT = THREE.RepeatWrapping;
-                
+
                 // Copy UV transform from pattern texture if available
                 if (loadedTextures.pattern) {
                   tex.repeat.copy(loadedTextures.pattern.repeat);
@@ -252,7 +273,7 @@ export const applyExtractedTexturesToMesh = async (
                   tex.rotation = loadedTextures.pattern.rotation;
                   tex.center.copy(loadedTextures.pattern.center);
                 }
-                
+
                 tex.needsUpdate = true;
                 console.log(`🎨 Applied normal map settings with pattern UV transform`);
               }
@@ -277,6 +298,7 @@ export const applyExtractedTexturesToMesh = async (
           patternScale: vmatData?.parameters?.patternScale || 1.0,
           patternRotation: vmatData?.parameters?.patternRotation || 0.0,
           colorAdjustment: vmatData?.parameters?.colorAdjustment || 0.0,
+          colorBrightness: vmatData?.parameters?.colorBrightness || 1.0,
           roughness: vmatData?.parameters?.roughness || 0.8,
           metalness: vmatData?.parameters?.metalness || 0.1,
 
@@ -320,7 +342,6 @@ export const applyExtractedTexturesToMesh = async (
           wearSoftness: vmatData?.parameters?.wearSoftness || 0.2,
           sprayBlend: vmatData?.parameters?.sprayBlend || [1, 1],
           biasSpray: vmatData?.parameters?.biasSpray || false,
-          colorBrightness: vmatData?.parameters?.colorBrightness || 1,
           ignoreWeaponSizeScale: vmatData?.parameters?.ignoreWeaponSizeScale || false,
           weaponLength: vmatData?.parameters?.weaponLength || 36,
           uvScale: vmatData?.parameters?.uvScale || 1,
@@ -334,7 +355,14 @@ export const applyExtractedTexturesToMesh = async (
           useAllMasks: vmatData?.parameters?.useAllMasks || false,
           overrideNormal: vmatData?.parameters?.overrideNormal || false,
           roughnessMode: vmatData?.parameters?.roughnessMode || false,
-          separateChannelInputs: vmatData?.parameters?.separateChannelInputs || false
+          separateChannelInputs: vmatData?.parameters?.separateChannelInputs || false,
+
+          // Ensure wear texture is passed to shader
+          hasWearTexture: loadedTextures['wear'] ? 1 : 0,
+
+          // Wear remapping values (from items_game.txt)
+          wearRemapMin: vmatData?.parameters?.wearRemapMin || 0.0,
+          wearRemapMax: vmatData?.parameters?.wearRemapMax || 1.0,
         };
 
         // Prepare color slots

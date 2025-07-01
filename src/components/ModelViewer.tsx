@@ -19,6 +19,7 @@ import {
 import { parseVMAT, parseVCOMPMAT, VMATData } from '../vmatParser';
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { EffectComposer, Bloom, ChromaticAberration, Vignette } from '@react-three/postprocessing';
 
 // Sometimes Three.js just gives up and I don't want the whole thing to die
 class ErrorBoundary extends Component<
@@ -698,26 +699,67 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
     <div ref={containerRef} style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
       <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
         <CameraControlsManager />
-        {/* Even, omni-directional lighting for consistent illumination on all sides */}
-        <ambientLight intensity={0.5} color={0xffffff} />
-        <hemisphereLight
-          color={0xffffff}
-          groundColor={0x888888}
-          intensity={0.5}
-          position={[0, 10, 0]}
+        {/* Studio Lighting Setup */}
+        {/* 1. Key Light - Main illumination from slightly above and to the side */}
+        <directionalLight
+          position={[5, 8, 5]}
+          intensity={1.2}
+          color={0xfff5e6} // Warm white
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-left={-10}
+          shadow-camera-right={10}
+          shadow-camera-top={10}
+          shadow-camera-bottom={-10}
         />
-        {/* Six-point lighting: one directional from each axis direction */}
-        <directionalLight position={[10, 0, 0]} intensity={0.5} color={0xffffff} />
-        <directionalLight position={[-10, 0, 0]} intensity={0.5} color={0xffffff} />
-        <directionalLight position={[0, 10, 0]} intensity={0.5} color={0xffffff} />
-        <directionalLight position={[0, -10, 0]} intensity={0.5} color={0xffffff} />
-        <directionalLight position={[0, 0, 10]} intensity={0.5} color={0xffffff} />
-        <directionalLight position={[0, 0, -10]} intensity={0.5} color={0xffffff} />
+
+        {/* 2. Fill Light - Softer light from opposite side to reduce shadows */}
+        <directionalLight
+          position={[-5, 5, 3]}
+          intensity={0.5}
+          color={0xe6f2ff} // Cool white for contrast
+        />
+
+        {/* 3. Rim/Back Light - Creates edge definition */}
+        <directionalLight
+          position={[0, 5, -8]}
+          intensity={0.8}
+          color={0xffffff}
+        />
+
+        {/* 4. Top Light - Subtle overhead illumination */}
+        <directionalLight
+          position={[0, 10, 0]}
+          intensity={0.3}
+          color={0xffffff}
+        />
+
+        {/* 5. Subtle ambient for base illumination */}
+        <ambientLight intensity={0.2} color={0xf0f0f0} />
+
+        {/* 6. Hemisphere light for realistic sky/ground color bleeding */}
+        <hemisphereLight
+          color={0xffffff} // Sky color
+          groundColor={0x606060} // Ground color
+          intensity={0.3}
+        />
+
+        {/* Optional: Add spot lights for dramatic effect */}
+        <spotLight
+          position={[10, 10, 5]}
+          angle={0.3}
+          penumbra={0.5}
+          intensity={0.5}
+          color={0xfff0e0}
+          castShadow
+        />
+
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
           <ErrorBoundary fallback={<Box args={[1, 1, 1]} material={new THREE.MeshNormalMaterial()} />}>
             {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} modelScale={modelScale} onModelLoaded={() => setModelLoaded(true)} />}
             {/* Use a neutral HDRI for subtle reflections, not a forest */}
-            <Environment preset="city" background={false} />
+            <Environment preset="studio" background={false} />
+            <fog attach="fog" args={['#000000', 10, 50]} />
           </ErrorBoundary>
         </Suspense>
         <OrbitControls
@@ -726,6 +768,11 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
           enableRotate={true}
         />
         {showStats && <Stats />}
+        <EffectComposer>
+          <Bloom intensity={0.3} luminanceThreshold={0.8} />
+          <ChromaticAberration offset={[0.0005, 0.0005]} />
+          <Vignette offset={0.2} darkness={0.3} />
+        </EffectComposer>
       </Canvas>
     </div>
   );
