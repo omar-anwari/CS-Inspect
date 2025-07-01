@@ -1,83 +1,78 @@
-# CS:GO Skin Shader Implementation
+# CS:GO Skin Shader
 
-This document describes the implementation of the CS:GO/CS2 skin compositing shader for the Three.js-based CS Inspect viewer.
+This is the shader system that makes the skins look right in the 3D viewer. It's basically a recreation of how CS:GO renders skins but for the web.
 
-## Overview
+## What it does
 
-The new shader system (`src/shaders/csSkinShader.ts`) implements the Source 2 skin shader logic, supporting all major CS:GO paint styles and texture types. It replaces the simple texture assignment with a comprehensive compositing system that accurately recreates how skins appear in-game.
+The shader (`src/shaders/csSkinShader.ts`) handles all the CS:GO paint styles and textures. Instead of just slapping a texture on the model, it does proper compositing like the actual game does.
 
 ## Features
 
-### Paint Styles Supported
+### Paint Styles That Work
 
-- **Solid Color (0)**: Single color application
-- **Hydrographic (1)**: Pattern overlay with color tinting  
-- **Spray Paint (2)**: Pattern with alpha blending
-- **Anodized (3)**: Metallic color with pattern overlay
-- **Anodized Multi (4)**: Multiple colors blended based on mask texture
-- **Custom Paint (5)**: Complex pattern and color blending (default)
-- **Antiqued (6)**: Aged/weathered appearance
-- **Gunsmith (7)**: Metallic with subtle pattern effects
+- **Solid Color (0)**: Just one color
+- **Hydrographic (1)**: Pattern with color tinting  
+- **Spray Paint (2)**: Pattern with transparency
+- **Anodized (3)**: Metallic with pattern
+- **Anodized Multi (4)**: Multiple colors using masks
+- **Custom Paint (5)**: Complex blending (most skins use this)
+- **Antiqued (6)**: Weathered look
+- **Gunsmith (7)**: Subtle metallic effects
 
-### Texture Types Supported
+### Textures It Handles
 
-- **Color Texture**: Base material color
-- **Pattern Texture**: Main skin pattern/design
-- **Normal Texture**: Surface detail normals
-- **Roughness Texture**: Surface roughness map
-- **Metalness Texture**: Metallic properties
-- **AO Texture**: Ambient occlusion
-- **Mask Texture**: Color region selection for multi-color skins
-- **Wear Texture**: Wear pattern for battle-scarred effects
-- **Grunge Texture**: Additional weathering details
+- **Color**: Base material color
+- **Pattern**: The actual skin design
+- **Normal**: Surface bumps and details
+- **Roughness**: How shiny/matte it is
+- **Metalness**: Metallic properties
+- **AO**: Ambient occlusion (shadows)
+- **Mask**: What parts get which colors
+- **Wear**: Battle-scarred wear patterns
+- **Grunge**: Extra weathering
 
-### Shader Parameters
+### Settings You Can Mess With
 
-- `paintStyle`: Paint style ID (0-7)
-- `paintRoughness`: Paint-specific roughness
-- `wearAmount`: Wear intensity (0.0-1.0)
-- `patternScale`: Pattern size multiplier
-- `patternRotation`: Pattern rotation in radians
-- `colorAdjustment`: Color saturation adjustment
-- `colors[4]`: Up to 4 color slots for multi-color skins
-- `patternOffset`: Pattern UV offset
-- `patternTiling`: Pattern UV tiling
-- `roughness`: Base material roughness
-- `metalness`: Base material metalness
+- `paintStyle`: Which paint style to use (0-7)
+- `paintRoughness`: How rough the paint is
+- `wearAmount`: How beat up it looks (0.0-1.0)
+- `patternScale`: Make the pattern bigger/smaller
+- `patternRotation`: Rotate the pattern
+- `colorAdjustment`: Mess with saturation
+- `colors[4]`: Up to 4 colors for multi-color skins
+- `patternOffset`: Move the pattern around
+- `patternTiling`: Tile the pattern
+- `roughness`: Base roughness
+- `metalness`: How metallic it is
 
-## Usage
+## How to Use
 
-### Automatic Integration
+### Easy Mode
 
-The shader is automatically applied when loading skins through the existing `applyExtractedTexturesToMesh` function. The system detects when to use the advanced shader based on:
-
-- Presence of paint style information in VMAT data
-- Multiple texture types available
-- Wear amount specified
-- Pattern texture with additional textures
+It just works automatically when you load skins. The system figures out when to use the fancy shader based on what textures are available.
 
 ```typescript
-// Existing code - no changes needed
+// Just use the existing function - no changes needed
 await applyExtractedTexturesToMesh(mesh, textures, vmatData);
 ```
 
-### Manual Shader Creation
+### Manual Mode
 
-For advanced use cases, you can create the shader material directly:
+If you want to create the shader yourself:
 
 ```typescript
 import { createCSSkinShaderMaterial } from '../shaders/csSkinShader';
 
-// Load textures first
+// Load your textures
 const textures = {
   color: colorTexture,
   pattern: patternTexture,
   mask: maskTexture,
   wear: wearTexture,
-  // ... other textures
+  // ... whatever else you have
 };
 
-// Set parameters
+// Set it up
 const parameters = {
   paintStyle: 5, // Custom paint
   wearAmount: 0.3,
@@ -90,126 +85,127 @@ const parameters = {
   ]
 };
 
-// Create material
+// Apply it
 const material = createCSSkinShaderMaterial(textures, parameters);
 mesh.material = material;
 ```
 
-### Debug Controls
+### Debug Stuff
 
-Enable debug controls to test shader parameters in real-time:
+You can enable debug controls to mess around with settings:
 
 ```typescript
 import { applyCSGOSkinShaderWithDebug } from '../components/improvedTextureLoader';
 
-// Apply shader with debug UI
+// Add debug UI
 await applyCSGOSkinShaderWithDebug(mesh, textures, vmatData, true);
 ```
 
-The debug controls include:
-- Paint style selector (0-7)
-- Wear amount slider
-- Pattern scale and rotation
-- Roughness and metalness adjustment
-- Debug mode selector for texture visualization
+Debug controls:
+- Paint style picker
+- Wear slider
+- Pattern scaling/rotation
+- Roughness and metalness
+- Texture visualization modes
 
-### Updating Parameters
-
-Dynamically update shader parameters:
+### Change Settings On The Fly
 
 ```typescript
 import { updateCSSkinShaderUniforms } from '../shaders/csSkinShader';
 
-// Update wear amount for battle-scarred effect
+// Make it more beat up
 updateCSSkinShaderUniforms(material, {
   wearAmount: 0.8,
   patternScale: 1.2
 });
 ```
 
-## Technical Details
+## How It Works
 
-### Compositing Logic
+### The Process
 
-The shader implements accurate CS:GO compositing:
+The shader does this stuff in order:
 
-1. **Base Layer**: Start with color texture
-2. **Pattern Application**: Apply pattern based on paint style
-3. **Color Blending**: Blend pattern with color slots using mask
-4. **Wear Effects**: Remove paint to reveal base material
-5. **Surface Properties**: Apply roughness, metalness, normal maps
+1. **Start with base color**
+2. **Apply the pattern** based on paint style
+3. **Blend colors** using the mask texture
+4. **Add wear** to make it look beat up
+5. **Apply surface stuff** like roughness and normals
 
-### Paint Style Implementation
+### Paint Style Breakdown
 
-Each paint style uses different blending modes:
+Each style blends differently:
 
-- **Hydrographic**: Overlay blend for realistic decal appearance
-- **Anodized**: Multiply blend for metallic color coating
-- **Spray Paint**: Alpha blend for painted-on appearance  
-- **Custom Paint**: Soft light blend for complex effects
+- **Hydrographic**: Overlay blend (like water transfer)
+- **Anodized**: Multiply blend (metallic coating)
+- **Spray Paint**: Alpha blend (painted on)  
+- **Custom Paint**: Soft light blend (complex stuff)
 
 ### Wear System
 
-Wear effects use multiple layers:
-- Primary wear texture defines removal areas
-- Grunge texture adds realistic weathering patterns
-- Smooth transitions prevent harsh edges
-- Base material revealed under wear
+Wear uses multiple textures:
+- Main wear texture shows where paint comes off
+- Grunge adds extra weathering
+- Smooth transitions so it doesn't look janky
+- Shows base material underneath
 
 ### Performance
 
-The shader is optimized for real-time rendering:
-- Conditional compilation for unused features
-- Efficient texture sampling
-- Minimal branching in fragment shader
-- Compatible with Three.js material system
+The shader is fast enough for real-time use:
+- Only compiles what you need
+- Smart texture sampling
+- Minimal if/else branching in the shader
+- Works with Three.js without breaking anything
 
 ## File Structure
 
 ```
 src/
 ├── shaders/
-│   └── csSkinShader.ts          # Main shader implementation
+│   └── csSkinShader.ts          # Main shader code
 ├── components/
-│   └── improvedTextureLoader.ts # Integration and debug tools
-└── vmatParser.ts                # VMAT parameter extraction
+│   └── improvedTextureLoader.ts # How it hooks into the app
+└── vmatParser.ts                # Reads VMAT files
 ```
 
-## Paint Style Reference
+## Paint Style Cheat Sheet
 
-| ID | Name | Description | Blend Mode |
+| ID | Name | What It Does | How It Blends |
 |----|------|-------------|------------|
-| 0 | Solid Color | Single color application | Replace |
-| 1 | Hydrographic | Water transfer printing | Overlay |
-| 2 | Spray Paint | Painted surface | Alpha |
-| 3 | Anodized | Anodized aluminum | Multiply |
-| 4 | Anodized Multi | Multi-color anodized | Mask-based |
-| 5 | Custom Paint | Hand-painted appearance | Soft Light |
-| 6 | Antiqued | Aged/weathered metal | Overlay |
-| 7 | Gunsmith | Precision metalwork | Screen |
+| 0 | Solid Color | Just one color | Replace |
+| 1 | Hydrographic | Water transfer look | Overlay |
+| 2 | Spray Paint | Painted-on effect | Alpha |
+| 3 | Anodized | Metallic coating | Multiply |
+| 4 | Anodized Multi | Multiple colors | Mask-based |
+| 5 | Custom Paint | Complex blending | Soft Light |
+| 6 | Antiqued | Weathered metal | Overlay |
+| 7 | Gunsmith | Subtle metallic | Screen |
 
 ## Debug Modes
 
-The shader includes debug visualization modes:
+You can see what's happening under the hood:
 
-- `0`: Normal rendering
-- `1`: Show pattern texture only
-- `2`: Show mask texture only  
-- `3`: Show wear texture only
-- `4`: Show UV coordinates
+- `0`: Normal view
+- `1`: Just the pattern
+- `2`: Just the mask  
+- `3`: Just the wear
+- `4`: UV coordinates
+- `5`: Wear mask result
+- `6`: Normal map raw
+- `7`: Calculated normals
 
-Enable debug mode through the uniform:
+Turn on debug mode like this:
 ```typescript
 material.uniforms.debugMode.value = 1; // Show pattern
 ```
 
-## Integration Notes
+## How It Fits In
 
-The shader integrates seamlessly with the existing codebase:
+The shader works with everything else:
 
-- Automatically detects when to use advanced shader vs simple texture assignment
-- Preserves existing texture loading and VMAT parsing
-- Maintains compatibility with all existing viewer features
-- No breaking changes to existing API
+- Figures out when to use fancy rendering vs simple textures
+- Doesn't break existing texture loading
+- All your current viewer stuff still works
+- Won't mess up your existing code
 
-The system falls back to standard Three.js materials when the advanced shader is not needed, ensuring optimal performance for simple skins while providing full CS:GO accuracy for complex ones.
+It automatically falls back to regular Three.js materials when the fancy shader isn't needed, so simple skins stay fast while complex ones look accurate.

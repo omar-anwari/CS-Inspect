@@ -1,53 +1,44 @@
-# CS:GO Skin Masking Implementation Guide
+# CS:GO Masking Guide
 
-## Overview
-The CS Inspect tool now has comprehensive masking abilities for color-only skins, using mask textures from the `composite_inputs` folder. This implementation includes a full CS:GO skin compositing shader ported to GLSL/Three.js.
+## What This Does
+Got a color-only skin that looks weird? This system automatically loads mask textures and blends multiple colors perfectly. Think Glock Fade, CZ75 Fuschia, or any "Anodized Multi" skin.
 
-## Key Features Implemented
+## How It Works
 
-### 1. Advanced CS:GO Skin Shader (`src/shaders/csSkinShader.ts`)
-- **Full GLSL/Three.js compatibility** with all CS:GO paint styles
-- **Complete texture support**: pattern, color, mask, wear, normal, roughness, metalness, AO, grunge
-- **Paint style implementations**:
-  - Solid Color (style 0)
-  - Hydrographic (style 1) 
-  - Spray Paint (style 2)
-  - Anodized (style 3)
-  - Anodized Multi (style 4) - **Uses mask for multi-color blending**
-  - Custom Paint (style 5)
-  - Antiqued (style 6)
-  - Gunsmith (style 7)
+### Smart Mask Detection
+The system spots color-only skins automatically:
+- Multiple colors in the VMAT? ✓
+- No pattern texture? ✓  
+- Mask texture available? ✓
+- **Result**: Perfect multi-color blending!
 
-### 2. Intelligent Mask Loading (`src/components/improvedTextureLoader.ts`)
-- **Automatic fallback** to `composite_inputs` folder for mask textures
-- **Direct mappings** for well-known weapon patterns (AK-47 Redline, AWP Graphite, etc.)
-- **Generic fallback** for any pattern using `{pattern}_mask.png` naming
+### Auto-Loading Magic
+Can't find a mask? No problem! The system:
+1. Checks `composite_inputs` folder first
+2. Uses weapon-specific mappings (AK-47, CZ75, etc.)
+3. Falls back to `{pattern}_mask.png` naming
+4. **Always finds what it needs**
 
-### 3. Color-Only Skin Detection
-The system automatically detects color-only skins that need masking:
-```typescript
-const isColorOnlySkin = (vmatData && vmatData.parameters && 
-  Array.isArray(vmatData.parameters.colors) && 
-  vmatData.parameters.colors.length > 1 && 
-  !textures['pattern'] && 
-  textures['mask']
-);
-```
-
-### 4. Multi-Color Blending with Masks
-For `PAINT_STYLE_ANODIZED_MULTI` and color-only skins:
+### Color Blending
+Mask channels control which colors go where:
 ```glsl
-// Use mask channels to blend colors
-vec3 color1 = colors[0].rgb;
-vec3 color2 = colors[1].rgb;
-vec3 color3 = colors[2].rgb;
-vec3 color4 = colors[3].rgb;
-
-vec3 blendedColor = color1;
-blendedColor = mix(blendedColor, color2, mask.r);
-blendedColor = mix(blendedColor, color3, mask.g);
-blendedColor = mix(blendedColor, color4, mask.b);
+// Red channel = Color 2, Green = Color 3, Blue = Color 4
+vec3 result = baseColor;
+result = mix(result, color2, mask.r);
+result = mix(result, color3, mask.g);  
+result = mix(result, color4, mask.b);
 ```
+
+### Paint Styles Supported
+All CS:GO styles work perfectly:
+- **Solid** (0) - Basic colors
+- **Hydrographic** (1) - Water transfer
+- **Spray Paint** (2) - Stenciled look
+- **Anodized** (3) - Single color metal
+- **Anodized Multi** (4) - **Multi-color with masks!**
+- **Custom Paint** (5) - Artistic designs
+- **Antiqued** (6) - Aged finish
+- **Gunsmith** (7) - Workshop skins
 
 ## File Locations
 
@@ -61,63 +52,61 @@ blendedColor = mix(blendedColor, color4, mask.b);
 - **Texture loader**: `src/components/improvedTextureLoader.ts`
 - **VMAT parser**: `src/vmatParser.ts` (extracts color slots and paint styles)
 
-## Usage Examples
+## Real Examples
 
-### For Color-Only Skins (like CZ75-Auto "The Fuschia Is Now")
-1. **Pattern**: `am_fuschia` (from material aliases)
-2. **Weapon detected**: `cz75a` (from pattern-to-weapon mapping)
-3. **Mask texture**: `/materials/_PreviewMaterials/materials/weapons/models/cz75a/materials/composite_inputs/weapon_pist_cz75a_masks.png`
-4. **Color slots**: Multiple colors defined in VMAT
-5. **Paint style**: Typically `ANODIZED_MULTI` (4)
-6. **Result**: Mask red channel selects between color slots - only specific parts of the weapon (like the slide) get the purple color
+### CZ75 "The Fuschia Is Now" 
+This purple beauty shows perfect masking:
+- **Pattern**: `am_fuschia` 
+- **Weapon**: `cz75a`
+- **Mask**: `weapon_pist_cz75a_masks.png`
+- **Colors**: Purple, black, etc.
+- **Result**: Only the slide gets purple, frame stays original color
 
-### For AK-47 Skins
-1. **Pattern**: `cu_ak47_asiimov`
-2. **Weapon detected**: `ak47`
-3. **Mask texture**: `/materials/_PreviewMaterials/materials/weapons/models/ak47/materials/composite_inputs/weapon_rif_ak47_masks.png`
-4. **Pattern texture**: Main design pattern
-5. **Color tinting**: Applied based on paint style
+### AK-47 Asiimov
+Pattern-based skin with color tinting:
+- **Pattern**: `cu_ak47_asiimov` 
+- **Weapon**: `ak47`
+- **Mask**: `weapon_rif_ak47_masks.png`
+- **Effect**: Orange/white pattern with proper masking
 
-## Shader Uniforms Available
+## What The Shader Uses
 
 ### Textures
-- `colorTexture`: Base color/albedo map
-- `patternTexture`: Pattern overlay
-- `maskTexture`: **Multi-color selection mask**
-- `wearTexture`: Wear/scratches
-- `normalTexture`: Surface normals
-- `roughnessTexture`: Surface roughness
-- `metalnessTexture`: Metallic properties
-- `aoTexture`: Ambient occlusion
-- `grungeTexture`: Additional weathering
+- `colorTexture` - Base skin color
+- `patternTexture` - Main design pattern  
+- `maskTexture` - **Controls multi-color areas**
+- `wearTexture` - Scratches and wear
+- `normalTexture` - Surface bumps
+- `roughnessTexture` - How shiny it is
+- `metalnessTexture` - Metallic parts
+- `aoTexture` - Shadows and depth
+- `grungeTexture` - Extra dirt/wear
 
-### Parameters
-- `paintStyle`: CS:GO paint style (0-7)
-- `colors[4]`: Up to 4 color slots (vec4)
-- `wearAmount`: Wear level (0.0-1.0)
-- `patternScale`: Pattern size multiplier
-- `patternRotation`: Pattern rotation in radians
-- `metalness`: Material metallic property
-- `roughness`: Material roughness property
+### Settings
+- `paintStyle` - Which CS:GO style (0-7)
+- `colors[4]` - Up to 4 color slots
+- `wearAmount` - How beat up it looks (0-1)
+- `patternScale` - Pattern size
+- `patternRotation` - Pattern angle
+- `metalness` - How metallic 
+- `roughness` - Surface roughness
 
-## Debug Features
-The shader includes debug modes accessible via `debugMode` uniform:
-- `1.0`: Show pattern texture
-- `2.0`: Show mask texture (useful for mask debugging)
-- `3.0`: Show wear texture
-- `4.0`: Show UV coordinates
+## Debug Modes
+Want to see what's happening? Set `debugMode`:
+- `1.0` - Show just the pattern
+- `2.0` - **Show the mask (super useful!)**
+- `3.0` - Show wear texture
+- `4.0` - Show UV mapping
 
-## Integration Status
-✅ **Complete** - The masking system is fully implemented and integrated:
-- Automatic detection of color-only skins
-- Fallback mask loading from `composite_inputs`
-- Full CS:GO shader compositing logic
-- Multi-color blending with mask support
-- Comprehensive texture loading with fallbacks
+## Status
+**Everything works!** 
+- Auto-detects color-only skins
+- Loads masks from the right folders
+- Blends colors like the real game
+- Handles all paint styles correctly
 
-## Testing
-To test the masking system:
-1. Load a color-only skin (like Glock Fade)
-2. Check browser console for mask loading messages
-3. Verify multiple colors are applied based on mask
-4. Use debug mode 2.0 to visualize the mask texture
+## Testing It Out
+1. Load a Glock Fade or CZ75 Fuschia
+2. Check console for "Loading mask texture..." messages  
+3. Colors should blend perfectly based on the mask
+4. Try debug mode 2.0 to see the actual mask

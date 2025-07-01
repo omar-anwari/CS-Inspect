@@ -29,6 +29,10 @@ export interface CSSkinShaderUniforms {
   patternRotation: number;
   colorAdjustment: number;
 
+  // Wear remapping
+  wearRemapMin: number;
+  wearRemapMax: number;
+
   // Color slots (up to 4 colors)
   colors: THREE.Vector4[];
 
@@ -126,6 +130,8 @@ uniform float hasAoTexture;
 uniform float hasMaskTexture;
 uniform float hasWearTexture;
 uniform float hasGrungeTexture;
+uniform float wearRemapMin;
+uniform float wearRemapMax;
 
 // Wear parameters
 uniform float wearSoftness;
@@ -191,51 +197,36 @@ float calculateWearMask(vec2 uv, float wearAmount) {
   if (hasWearTexture < 0.5 || wearAmount <= 0.0) {
     return 0.0;
   }
-  
-  // Sample wear texture - this defines which areas wear first
-  // In CS:GO, black areas (0.0) wear first, white areas (1.0) wear last
-  float wearSample = texture2D(wearTexture, uv).r;
-  
-  // CS:GO wear ranges:
-  // 0.00-0.07: Factory New (minimal visible wear)
-  // 0.07-0.15: Minimal Wear (light wear on edges)
-  // 0.15-0.38: Field-Tested (moderate wear)
-  // 0.38-0.45: Well-Worn (heavy wear)
-  // 0.45-1.00: Battle-Scarred (extreme wear)
-  
-  // Apply a more gentle curve to make wear more visible
-  float wearCurve = pow(wearAmount, 1.5); // Reduced from 2.5 to make wear more apparent
-  
-  // Calculate if this pixel should show wear based on the wear amount
-  // and the wear texture value
+
+  // Remap wear amount from [0,1] to [wearRemapMin, wearRemapMax]
+  float remappedWearAmount = mix(wearRemapMin, wearRemapMax, wearAmount);
+
+  // Apply same UV transform as pattern texture
+  vec2 wearUV = (uv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
+  wearUV = rotateUV(wearUV, patternRotation);
+
+  float wearSample = texture2D(wearTexture, wearUV).r;
+
+  float wearCurve = pow(remappedWearAmount, 1.5);
   float wearThreshold = wearCurve;
-  
-  // Invert and remap wear sample so areas with low values in the wear texture
-  // (edges, corners) show wear first
+
   float remappedWear = 1.0 - wearSample;
-  
-  // Calculate wear mask with smooth transition
-  float softness = wearSoftness > 0.0 ? wearSoftness : 0.15; // Increased from 0.1 for smoother transitions
+
+  float softness = wearSoftness > 0.0 ? wearSoftness : 0.15;
   float wearMask = smoothstep(
     wearThreshold - softness,
     wearThreshold + softness,
     remappedWear
   );
-  
-  // Adjust wear visibility based on condition ranges
-  // Make wear more apparent while still respecting the condition boundaries
-  if (wearAmount < 0.07) {
-    // Factory New range - minimal but visible wear on edges
-    wearMask *= wearAmount * 10.0; // Increased from 5.0 to make edge wear more visible
-  } else if (wearAmount < 0.15) {
-    // Minimal Wear range - noticeable wear
-    wearMask *= 0.7 + (wearAmount - 0.07) * 2.5; // More aggressive scaling
-  } else if (wearAmount < 0.38) {
-    // Field-Tested range - significant wear
-    wearMask *= 0.9 + (wearAmount - 0.15) * 0.43; // Start at 90% strength
+
+  if (remappedWearAmount < 0.07) {
+    wearMask *= remappedWearAmount * 10.0;
+  } else if (remappedWearAmount < 0.15) {
+    wearMask *= 0.7 + (remappedWearAmount - 0.07) * 2.5;
+  } else if (remappedWearAmount < 0.38) {
+    wearMask *= 0.9 + (remappedWearAmount - 0.15) * 0.43;
   }
-  // Well-Worn and Battle-Scarred get full wear effect
-  
+
   return clamp(wearMask, 0.0, 1.0);
 }
 
@@ -331,7 +322,7 @@ vec4 compositeSkin() {
     }
     
     // Blend between painted and base material based on wear
-    finalColor = mix(paintColor, baseMaterial, wearMask);
+    finalColor = mix(baseMaterial, paintColor, wearMask);
   } else {
     finalColor = paintColor;
   }
@@ -353,7 +344,11 @@ void main() {
   vec3 normal = normalize(vNormal);
 
   if (hasNormalTexture > 0.5) {
-    vec3 normalMapSample = texture2D(normalTexture, vUv).rgb;
+    // Apply same UV transform as pattern texture for normal map
+    vec2 normalUV = (vUv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
+    normalUV = rotateUV(normalUV, patternRotation);
+    
+    vec3 normalMapSample = texture2D(normalTexture, normalUV).rgb;
     vec3 tangentNormal = normalMapSample * 2.0 - 1.0;
 
     // Flip Y component if needed (toggle if incorrect)
@@ -458,6 +453,8 @@ export function createCSSkinShaderMaterial(
   const uniforms: Record<string, THREE.IUniform> = {
     // Textures - use null for missing textures, shader will handle it
     colorTexture: { value: textures.color || createDefaultTexture([0.5, 0.5, 0.5, 1]) },
+    wearRemapMin: { value: parameters.wearRemapMin || 0.0 },
+    wearRemapMax: { value: parameters.wearRemapMax || 1.0 },
     patternTexture: { value: textures.pattern || createDefaultTexture([1, 1, 1, 1]) },
     normalTexture: { value: textures.normal || createDefaultTexture([0.5, 0.5, 1, 1]) },
     roughnessTexture: { value: textures.roughness || createDefaultTexture([0.5, 0.5, 0.5, 1]) },
