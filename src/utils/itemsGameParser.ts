@@ -10,8 +10,8 @@
  * - Builds a cache of paint kit IDs that require legacy models
  * - Provides APIs to check if a specific weapon/skin combination needs a legacy model
  * 
- * The approach avoids hardcoding specific skin indexes (like AK-47 Empress with index 675)
- * and instead dynamically determines which models should use legacy versions.
+ * The approach dynamically determines which models should use legacy versions
+ * by parsing the actual game data files.
  */
 
 /**
@@ -44,23 +44,6 @@ interface PaintKitData {
   wear_remap_max?: string;
   style?: string;
 }
-
-// Special case handling for common problematic skins
-export const SPECIAL_LEGACY_MODELS: Record<string, boolean> = {
-  // Deagle Printstream
-  '962': true,
-  // M4A1-S Printstream
-  '1073': true,
-  // USP-S Printstream
-  '1631': true,
-  // AWP Wildfire
-  '917': true,
-  // AK-47 Empress
-  '675': true,
-  // AK-47 Asiimov
-  '801': true,
-  // Other known problematic skins with unique texture loading requirements
-};
 
 // Cache for legacy model data extracted from items_game.txt
 // This gets populated when parsing the file and can be used as a quick lookup
@@ -100,7 +83,6 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
     let inItems = false;
     let inPaintKits = false;
     let inStickers = false; // Track stickers section separately
-    let foundWeaponPaintKits = false; // Flag to identify the correct paint_kits section for weapons
 
     const lines = content.split('\n');
     console.log(`Total lines in items_game.txt: ${lines.length}`);
@@ -187,11 +169,6 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
           } else if (inPaintKits) {
             currentPaintKit = id;
             data.paintKits[currentPaintKit] = { name: '' };
-
-            // Specifically log when we find paint kit 675 (AK-47 Empress)
-            if (currentPaintKit === '675') {
-              console.log(`Found paint kit 675 at line ${i + 1}`);
-            }
           }
         }
         continue;
@@ -299,7 +276,7 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
  * 1. If the specific paint index is in our legacy model cache
  * 2. If not found, it checks the parsed items_game.txt data for the flag
  * 3. If no specific flag is found for the skin, it falls back to checking the base weapon
- * 4. For patterns like "printstream", it also checks if the pattern name indicates a legacy model
+ * 4. For patterns with known legacy indicators, it also checks pattern names
  * 
  * @param weaponName Base weapon name (e.g., "ak47", "karambit")
  * @param paintIndex Optional paint index to check if this specific skin needs a legacy model
@@ -320,7 +297,7 @@ export const isLegacyModel = async (weaponName: string, paintIndex?: number): Pr
       const paintIndexStr = paintIndex.toString();
       const weaponKey = `${weaponName}_${paintIndex}`;
 
-      // Check for special cases or cache entries
+      // Check for cache entries
       if (knownLegacyModels[paintIndexStr]) {
         console.log(`✅ Legacy model detected for paint index ${paintIndex} (from cache)`);
         return true;
@@ -328,11 +305,6 @@ export const isLegacyModel = async (weaponName: string, paintIndex?: number): Pr
 
       if (knownLegacyModels[weaponKey]) {
         console.log(`✅ Legacy model detected for weapon+skin ${weaponKey} (from cache)`);
-        return true;
-      }
-
-      if (SPECIAL_LEGACY_MODELS[paintIndexStr]) {
-        console.log(`✅ Legacy model detected for paint index ${paintIndex} (from special cases list)`);
         return true;
       }
 
@@ -348,7 +320,9 @@ export const isLegacyModel = async (weaponName: string, paintIndex?: number): Pr
           name.includes('asiimov') ||
           name.includes('wildfire') ||
           name.includes('empress') ||
-          name.includes('neo-noir')) {
+          name.includes('neo-noir') ||
+          name.includes('cortex') ||
+          name.includes('duality')) {
           console.log(`✅ Legacy model detected based on pattern name: ${name}`);
           // Add to cache for future reference
           legacyModelCache[paintIndexStr] = true;
@@ -393,16 +367,6 @@ export const isLegacyModel = async (weaponName: string, paintIndex?: number): Pr
         // Try to search the raw file for the paint kit
         // This helps catch cases where our parser missed something
         await debugPaintKit(paintIndex);
-      }
-
-      // Even if the paint kit wasn't found, check if it's in our special list
-      if (SPECIAL_LEGACY_MODELS[paintKitKey]) {
-        console.log(`✅ Paint index ${paintIndex} found in special legacy models list`);
-
-        // Add to cache for future lookups to avoid repeated checks
-        legacyModelCache[paintKitKey] = true;
-
-        return true;
       }
 
       // If no specific paint kit legacy flag found, try a deep search for the pattern
@@ -518,18 +482,6 @@ export const getSkinInfo = async (weaponName: string, paintIndex: number): Promi
     const paintKitKey = paintIndex.toString();
     const paintKit = data.paintKits[paintKitKey];
 
-    // Check if the paint kit is in our special legacy models list first
-    if (SPECIAL_LEGACY_MODELS[paintKitKey]) {
-      console.log(`Using special legacy model data for paint index ${paintIndex}`);
-
-      // Create a PaintKitData with appropriate fields for the legacy model
-      return {
-        name: `${weaponName}_${paintIndex}`,
-        description_tag: `#PaintKit_${weaponName}_${paintIndex}_Tag`,
-        use_legacy_model: "1"  // Force the legacy model flag
-      };
-    }
-
     if (!paintKit) {
       console.error(`No paint kit found for index ${paintIndex}`);
 
@@ -544,7 +496,7 @@ export const getSkinInfo = async (weaponName: string, paintIndex: number): Promi
         };
       }
 
-      // Even if not found in cache or special list, provide minimal data to avoid null returns
+      // Even if not found in cache, provide minimal data to avoid null returns
       console.warn(`Creating minimal fallback data for ${weaponName} with paint index ${paintIndex}`);
       return {
         name: `${weaponName}_${paintIndex}`,
@@ -689,8 +641,13 @@ export const validateProblemSkins = async (): Promise<void> => {
 
   // Test a range of paint kits that might have the use_legacy_model flag
   const testCases = [
-    // Known case that was previously hardcoded
+    // Known cases that were previously hardcoded
     { weapon: 'ak47', paintIndex: 675, name: 'AK-47 Empress' },
+    { weapon: 'ak47', paintIndex: 801, name: 'AK-47 Asiimov' },
+    { weapon: 'deagle', paintIndex: 962, name: 'Desert Eagle Printstream' },
+    { weapon: 'm4a1_silencer', paintIndex: 1073, name: 'M4A1-S Printstream' },
+    { weapon: 'usp_silencer', paintIndex: 1631, name: 'USP-S Printstream' },
+    { weapon: 'awp', paintIndex: 917, name: 'AWP Wildfire' },
 
     // Other Operation Hydra skins released around the same time
     { weapon: 'bizon', paintIndex: 676, name: 'PP-Bizon High Roller' },
@@ -704,9 +661,7 @@ export const validateProblemSkins = async (): Promise<void> => {
 
     // Additional test cases for newer skins
     { weapon: 'awp', paintIndex: 1370, name: 'AWP Duality' },
-    { weapon: 'm4a1_silencer', paintIndex: 1073, name: 'M4A1-S Printstream' },
-    { weapon: 'knife_karambit', paintIndex: 38, name: 'Karambit Fade' },
-    { weapon: 'deagle', paintIndex: 962, name: 'Desert Eagle Printstream' }
+    { weapon: 'knife_karambit', paintIndex: 38, name: 'Karambit Fade' }
   ];
 
   // Run tests for each case
