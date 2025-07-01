@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { loadTextureWithFallbacks, getTextureCacheSize, clearTextureCache, TextureMetadata, determineLikelyFolder } from './improvedTextureLoader';
-import { parseVMAT } from '../vmatParser';
+import { parseVMATWithVCOMPMAT } from '../vmatParser';
 import { MATERIAL_ALIASES } from '../materialAliases';
 import * as THREE from 'three';
 
@@ -54,7 +54,7 @@ const TextureLoadingTest: React.FC = () => {
     for (const vmatPath of vmatPaths) {
       try {
         console.log(`🔍 Trying to parse VMAT from: ${vmatPath}`);
-        vmatData = await parseVMAT(vmatPath);
+        vmatData = await parseVMATWithVCOMPMAT(vmatPath);
         
         if (vmatData && Object.keys(vmatData.parameters).length > 0) {
           console.log(`✅ Successfully parsed VMAT from: ${vmatPath}`);

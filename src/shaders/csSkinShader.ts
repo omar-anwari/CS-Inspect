@@ -203,10 +203,10 @@ float calculateWearMask(vec2 uv, float wearAmount) {
   // Remap wear amount from [0,1] to [wearRemapMin, wearRemapMax]
   float remappedWearAmount = mix(wearRemapMin, wearRemapMax, wearAmount);
 
-  // Apply same UV transform as pattern texture
-  vec2 wearUV = (uv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
-  wearUV = rotateUV(wearUV, patternRotation);
-
+  // Use base UV coordinates for wear texture to ensure consistent wear on both sides
+  // Don't apply pattern transformations to wear texture
+  vec2 wearUV = uv;
+  
   float wearSample = texture2D(wearTexture, wearUV).r;
 
   // Don't invert the wear sample - use it directly

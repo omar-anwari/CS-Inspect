@@ -42,6 +42,21 @@ export interface VMATData {
 		[key: string]: any;
 	};
 	filePath?: string;
+
+	// Additional fields for extended functionality
+	wearTexturePath?: string;
+	wearTextureOverride?: string;
+	vcompmats?: VCOMPMATData[]; // Add support for VCOMPMAT layers
+}
+
+/**
+ * Interface for VCOMPMAT data
+ */
+export interface VCOMPMATData {
+	layerName: string;
+	textures: Record<string, string>;
+	parameters: Record<string, any>;
+	wearTexture?: string;
 }
 
 /**
@@ -506,3 +521,129 @@ export const parseVCOMPMAT = (vcompmatContent: string): VMATData => {
 		return result;
 	}
 };
+
+/**
+ * Extended function to parse VMAT files with optional VCOMPMAT layer support
+ */
+export async function parseVMATWithVCOMPMAT(vmatPath: string): Promise<VMATData | null> {
+  try {
+    const vmatData = await parseVMAT(vmatPath);
+    if (!vmatData) return null;
+
+    // Check for VCOMPMAT references
+    const vcompmats: VCOMPMATData[] = [];
+    
+    // Look for layer references in the VMAT
+    if (vmatData.parameters) {
+      for (const [key, value] of Object.entries(vmatData.parameters)) {
+        if (key.includes('layer_name') && typeof value === 'string' && value.endsWith('.vmat')) {
+          // Parse the referenced VCOMPMAT
+          const vcompmatPath = vmatPath.replace(/[^/]+\.vmat$/, value);
+          const vcompmatData = await parseVCOMPMATFile(vcompmatPath);
+          if (vcompmatData) {
+            vcompmats.push(vcompmatData);
+          }
+        }
+      }
+    }
+
+    vmatData.vcompmats = vcompmats;
+
+    // Check for wear texture overrides in VCOMPMATs
+    for (const vcompmat of vcompmats) {
+      if (vcompmat.wearTexture && !vmatData.wearTextureOverride) {
+        vmatData.wearTextureOverride = vcompmat.wearTexture;
+        console.log(`[VCOMPMAT] Found wear texture override: ${vcompmat.wearTexture}`);
+        break;
+      }
+    }
+
+    return vmatData;
+  } catch (error) {
+    console.error('Error parsing VMAT with VCOMPMAT:', error);
+    return null;
+  }
+}
+
+// Add this helper function that's missing:
+function parseVMATValue(value: string): any {
+  // Try to parse as number first
+  if (/^-?\d+\.?\d*$/.test(value)) {
+    return value.includes('.') ? parseFloat(value) : parseInt(value, 10);
+  }
+  
+  // Try to parse as vector/array
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value
+      .slice(1, -1)
+      .split(/\s+/)
+      .filter(v => v.trim() !== '')
+      .map(v => parseFloat(v));
+  }
+  
+  // Return as string
+  return value;
+}
+
+// Rename the duplicate function to avoid conflicts
+async function parseVCOMPMATFile(vcompmatPath: string): Promise<VCOMPMATData | null> {
+  try {
+    const response = await fetch(vcompmatPath);
+    if (!response.ok) return null;
+    
+    const content = await response.text();
+    const result: VCOMPMATData = {
+      layerName: vcompmatPath.split('/').pop() || '',
+      textures: {},
+      parameters: {}
+    };
+
+    // Parse VCOMPMAT content (similar to VMAT parsing)
+    const lines = content.split('\n');
+    let inCompiledTextures = false;
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      if (trimmed === '"Compiled Textures"' || trimmed === 'Compiled Textures') {
+        inCompiledTextures = true;
+        continue;
+      }
+      
+      if (trimmed === '}' && inCompiledTextures) {
+        inCompiledTextures = false;
+        continue;
+      }
+      
+      if (inCompiledTextures) {
+        // Parse texture entries
+        const match = trimmed.match(/"([^"]+)"\s+"([^"]+)"/);
+        if (match) {
+          const [, texName, vtexPath] = match;
+          const pngPath = normalizeTexturePath(vtexPath.replace(/\.vtex$/, '.png').replace(/_[a-f0-9]{8}/, ''));
+          
+          if (pngPath) {
+            result.textures[texName] = pngPath;
+            
+            // Check for wear textures
+            if (texName.toLowerCase().includes('wear')) {
+              result.wearTexture = pngPath;
+            }
+          }
+        }
+      } else {
+        // Parse parameters
+        const match = trimmed.match(/"([^"]+)"\s+"([^"]+)"/);
+        if (match) {
+          const [, key, value] = match;
+          result.parameters[key] = parseVMATValue(value);
+        }
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error parsing VCOMPMAT:', error);
+    return null;
+  }
+}

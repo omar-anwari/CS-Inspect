@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { getBaseWeaponName } from '../utils/modelPathResolver';
 import { getSkinInfo } from '../utils/itemsGameParser';
-import { parseVMAT, VMATData } from '../vmatParser';
+import { parseVMATWithVCOMPMAT, VMATData } from '../vmatParser';
 import * as THREE from 'three';
 import { applyExtractedTexturesToMesh } from './improvedTextureLoader';
 
@@ -220,7 +220,7 @@ const WeaponModel: React.FC<{ path: string; itemData?: ItemInfo; autoRotate?: bo
           for (const vmatPath of possibleVmatPaths) {
             try {
               console.log(`🔍 Attempting to load VMAT from: ${vmatPath}`);
-              const data = await parseVMAT(vmatPath);
+              const data = await parseVMATWithVCOMPMAT(vmatPath);
               if (data && Object.keys(data.parameters).length > 0) {
                 vmatData = data;
                 console.log(`✅ Successfully loaded VMAT from: ${vmatPath}`);
