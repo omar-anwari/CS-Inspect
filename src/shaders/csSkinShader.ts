@@ -148,17 +148,15 @@ uniform vec4 paintDurability;
 #define PAINT_STYLE_CUSTOM_PAINT 5.0
 #define PAINT_STYLE_ANTIQUED 6.0
 #define PAINT_STYLE_GUNSMITH 7.0
-#define PAINT_STYLE_PEARLESCENT 8.0
-
-// Safe texture sampling - won't break if texture doesn't exist
-vec4 sampleTexture(sampler2D tex, vec2 uv, float hasTexture, vec4 defaultValue) {
-  if (hasTexture > 0.5) {
-    return texture2D(tex, uv);
+#define PAINT_STYLE_PEARLESCENT 8.0  // Safe texture sampling - won't break if texture doesn't exist
+  vec4 sampleTexture(sampler2D tex, vec2 uv, float hasTexture, vec4 defaultValue) {
+    if (hasTexture > 0.5) {
+      return texture2D(tex, uv);
+    }
+    return defaultValue;
   }
-  return defaultValue;
-}
 
-// Utility functions - the boring math stuff
+  // Utility functions - basic math stuff I need
 vec2 rotateUV(vec2 uv, float angle) {
   float s = sin(angle);
   float c = cos(angle);
@@ -201,56 +199,65 @@ float calculateWearMask(vec2 uv, float wearAmount) {
     return 0.0;
   }
 
-  // Mirror UV coordinates for back faces
+  // Create a properly mirrored UV mapping for back faces
+  // I use the same UV space as the front face to prevent stretching
   vec2 wearUV = uv;
   if (!gl_FrontFacing) {
-  uv = 1.0 - uv; // Mirror both X and Y
-}
+    // Only mirror X coordinate (horizontal flip) for weapon sides
+    // This creates a proper mirror effect without stretching
+    wearUV.x = 1.0 - wearUV.x;
+  }
 
   // Remap wear amount from [0,1] to [wearRemapMin, wearRemapMax]
   float remappedWearAmount = mix(wearRemapMin, wearRemapMax, wearAmount);
 
   // Use base UV coordinates for wear texture so both sides look consistent
-  // Clamp UVs to prevent stretching on bad UV areas
   wearUV = clamp(wearUV, 0.0, 1.0);
   
+  // Sample the wear texture
   float wearSample = texture2D(wearTexture, wearUV).r;
-
-  // Don't flip the wear sample - use it as-is
-  // In CS:GO wear textures: white = wears first, black = resists wear
+  
+  // Don't invert the wear texture - I use it directly
   float wearValue = wearSample;
   
   // Create wear threshold based on how beat up it should be
-  // Higher wear amount = more areas get worn
-  float wearThreshold = remappedWearAmount;
+  float wearThreshold = 1.0 - remappedWearAmount;
   
-  // Calculate wear mask with soft edges so it doesn't look chunky
+  // Calculate wear mask with soft edges
   float softness = wearSoftness > 0.0 ? wearSoftness : 0.15;
   float wearMask = smoothstep(
     wearThreshold - softness,
     wearThreshold + softness,
     wearValue
   );
+  
+  // Invert to get correct wear mask (1.0 = worn, 0.0 = pristine)
+  wearMask = 1.0 - wearMask;
 
-  // Scale wear effect based on wear ranges (Factory New to Battle-Scarred)
-if (remappedWearAmount < 0.07) { // Changed from 0.01 to 0.07 to match real Factory New range
-  // Factory new - perfect condition - NO WEAR AT ALL
-  return 0.0; // This will ensure Factory New has absolutely no wear
-} else if (remappedWearAmount < 0.15) {
-  // Field tested - some wear showing
-  wearMask *= 0.75;
-} else if (remappedWearAmount < 0.38) {
-  // Well worn - pretty beat up
-  wearMask *= 0.9;
-}
-// Battle scarred gets the full treatment
+  // Scale wear effect based on wear ranges
+  if (remappedWearAmount < 0.07) {
+    // Factory New (0.00-0.07) - absolutely no wear
+    return 0.0;
+  } else if (remappedWearAmount < 0.15) {
+    // Minimal Wear (0.07-0.15) - very slight wear
+    wearMask *= 0.5;
+  } else if (remappedWearAmount < 0.38) {
+    // Field Tested (0.15-0.38) - moderate wear
+    wearMask *= 1.0;
+  } else if (remappedWearAmount < 0.45) {
+    // Well Worn (0.38-0.45) - significant wear
+    wearMask *= 1.5;
+  } else {
+    // Battle Scarred (0.45-1.00) - full wear effect or even enhanced
+    wearMask *= 2.5;
+  }
 
-// Make sure very small values are clamped to 0
-if (wearMask < 0.01) {
-  return 0.0;
-}
+  // Don't clamp small values for Battle-Scarred
+  if (remappedWearAmount < 0.45 && wearMask < 0.01) {
+    return 0.0;
+  }
 
-return clamp(wearMask, 0.0, 1.0);
+  return clamp(wearMask, 0.0, 1.0);
 }
 
 // Main compositing function - this is where the magic happens
@@ -260,8 +267,9 @@ vec4 compositeSkin() {
   // Mirror UV coordinates for back faces to prevent stretching
   // This helps when the model has bad UVs on one side
   if (!gl_FrontFacing) {
-  uv = 1.0 - uv; // Mirror both X and Y
-}
+    // Only mirror X coordinate for proper weapon side mirroring
+    uv.x = 1.0 - uv.x; 
+  }
   
   // Calculate pattern UV coordinates with scaling and rotation
   vec2 patternUV = (uv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
@@ -330,9 +338,9 @@ vec4 compositeSkin() {
     // Gunsmith - metallic with subtle pattern
     vec3 metallicColor = colors[0].rgb;
     
-    // If the first color is white/near-white, use the pattern as main color
+    // If the first color is white/near-white, I use the pattern as main color
     if (length(metallicColor - vec3(1.0)) < 0.1) {
-      // First color is basically white, so use pattern directly
+      // First color is basically white, so I use pattern directly
       if (hasPatternTexture > 0.5) {
         paintColor = pattern.rgb;
         // Add some metallic enhancement
@@ -365,25 +373,39 @@ vec4 compositeSkin() {
   float wearMask = calculateWearMask(uv, wearAmount);
   
   // Apply wear by showing the base material underneath
-if (wearMask > 0.05) {  // Changed from 0.01 to 0.05 to require more wear before showing base material
-  // Base material color - what you see when paint wears off
-  vec3 baseMaterial = vec3(0.25, 0.25, 0.25);
-  
-  // Add some variation based on the base color
-  baseMaterial = mix(baseMaterial, baseColor.rgb * 0.4, 0.3);
-  
-  // Add grunge for more realistic wear patterns
-  if (hasGrungeTexture > 0.5) {
-    float grungeMask = grunge.r * wearAmount * 0.3;
-    wearMask = max(wearMask, grungeMask);
+  if (wearMask > 0.01) {  // Lower threshold so Battle-Scarred shows more wear
+    // Base material color - what you see when paint wears off
+    vec3 baseMaterial = vec3(0.25, 0.25, 0.25);
+    
+    // Add some variation based on the base color
+    baseMaterial = mix(baseMaterial, baseColor.rgb * 0.4, 0.3);
+    
+    // Add grunge for more realistic wear patterns
+    if (hasGrungeTexture > 0.5) {
+      float grungeMask = grunge.r * wearAmount * 0.5;
+      wearMask = max(wearMask, grungeMask);
+    }
+    
+    // Use pattern texture luminance to protect bright areas of the pattern
+    if (hasPatternTexture > 0.5 && wearAmount < 0.6) {
+      // Calculate pattern brightness (luminance)
+      float patternBrightness = dot(pattern.rgb, vec3(0.299, 0.587, 0.114));
+      
+      // Reduce wear in bright pattern areas
+      float patternProtection = patternBrightness * (1.0 - wearAmount * 1.2);
+      wearMask *= (1.0 - patternProtection * 0.7);
+    }
+    
+    // For Battle-Scarred, enhance the wear effect
+    if (wearAmount > 0.45) {
+      wearMask = mix(wearMask, 1.0, (wearAmount - 0.45) * 0.6);
+    }
+    
+    // Blend from paint to base material based on how worn it is
+    finalColor = mix(paintColor, baseMaterial, wearMask);
+  } else {
+    finalColor = paintColor; // Use pure paint color with no wear
   }
-  
-  // Blend from paint to base material based on how worn it is
-  finalColor = mix(paintColor, baseMaterial, wearMask);
-  
-} else {
-  finalColor = paintColor; // Use pure paint color with no wear
-}
   
   // Apply color adjustments if needed
   if (colorAdjustment > 0.0) {
@@ -406,7 +428,7 @@ void main() {
 
   // Apply normal map if I have one
   if (hasNormalTexture > 0.5) {
-    // Use same UV transform as pattern so bumps align with design
+    // I use same UV transform as pattern so bumps align with design
     vec2 normalUV = (vUv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
     normalUV = rotateUV(normalUV, patternRotation);
     
@@ -523,7 +545,7 @@ export function createCSSkinShaderMaterial(
   };
 
   const uniforms: Record<string, THREE.IUniform> = {
-    // Textures - use null for missing textures, shader will handle it
+    // Textures - I use null for missing textures, shader will handle it
     colorTexture: { value: textures.color || createDefaultTexture([0.5, 0.5, 0.5, 1]) },
     wearRemapMin: { value: parameters.wearRemapMin || 0.0 },
     wearRemapMax: { value: parameters.wearRemapMax || 1.0 },
