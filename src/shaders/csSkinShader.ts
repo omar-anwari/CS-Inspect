@@ -201,12 +201,18 @@ float calculateWearMask(vec2 uv, float wearAmount) {
     return 0.0;
   }
 
+  // Mirror UV coordinates for back faces
+  vec2 wearUV = uv;
+  if (!gl_FrontFacing) {
+  uv = 1.0 - uv; // Mirror both X and Y
+}
+
   // Remap wear amount from [0,1] to [wearRemapMin, wearRemapMax]
   float remappedWearAmount = mix(wearRemapMin, wearRemapMax, wearAmount);
 
   // Use base UV coordinates for wear texture so both sides look consistent
-  // Don't mess with pattern scaling here
-  vec2 wearUV = uv;
+  // Clamp UVs to prevent stretching on bad UV areas
+  wearUV = clamp(wearUV, 0.0, 1.0);
   
   float wearSample = texture2D(wearTexture, wearUV).r;
 
@@ -227,27 +233,35 @@ float calculateWearMask(vec2 uv, float wearAmount) {
   );
 
   // Scale wear effect based on wear ranges (Factory New to Battle-Scarred)
-  if (remappedWearAmount < 0.01) {
-    // Factory new - perfect condition
-    return 0.0;
-  } else if (remappedWearAmount < 0.07) {
-    // Minimal wear - barely scratched
-    wearMask *= 0.5;
-  } else if (remappedWearAmount < 0.15) {
-    // Field tested - some wear showing
-    wearMask *= 0.75;
-  } else if (remappedWearAmount < 0.38) {
-    // Well worn - pretty beat up
-    wearMask *= 0.9;
-  }
-  // Battle scarred gets the full treatment
+if (remappedWearAmount < 0.07) { // Changed from 0.01 to 0.07 to match real Factory New range
+  // Factory new - perfect condition - NO WEAR AT ALL
+  return 0.0; // This will ensure Factory New has absolutely no wear
+} else if (remappedWearAmount < 0.15) {
+  // Field tested - some wear showing
+  wearMask *= 0.75;
+} else if (remappedWearAmount < 0.38) {
+  // Well worn - pretty beat up
+  wearMask *= 0.9;
+}
+// Battle scarred gets the full treatment
 
-  return clamp(wearMask, 0.0, 1.0);
+// Make sure very small values are clamped to 0
+if (wearMask < 0.01) {
+  return 0.0;
+}
+
+return clamp(wearMask, 0.0, 1.0);
 }
 
 // Main compositing function - this is where the magic happens
 vec4 compositeSkin() {
   vec2 uv = vUv;
+  
+  // Mirror UV coordinates for back faces to prevent stretching
+  // This helps when the model has bad UVs on one side
+  if (!gl_FrontFacing) {
+  uv = 1.0 - uv; // Mirror both X and Y
+}
   
   // Calculate pattern UV coordinates with scaling and rotation
   vec2 patternUV = (uv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
@@ -351,27 +365,25 @@ vec4 compositeSkin() {
   float wearMask = calculateWearMask(uv, wearAmount);
   
   // Apply wear by showing the base material underneath
-  if (wearMask > 0.0) {
-    // Base material color - what you see when paint wears off
-    vec3 baseMaterial = vec3(0.25, 0.25, 0.25);
-    
-    // Add some variation based on the base color
-    baseMaterial = mix(baseMaterial, baseColor.rgb * 0.4, 0.3);
-    
-    // Add grunge for more realistic wear patterns
-    if (hasGrungeTexture > 0.5) {
-      float grungeMask = grunge.r * wearAmount * 0.3;
-      wearMask = max(wearMask, grungeMask);
-    }
-    
-    // Blend from paint to base material based on how worn it is
-    finalColor = mix(paintColor, baseMaterial, wearMask);
-    
-    // Don't mess with alpha - wear shouldn't make the gun transparent
-    
-  } else {
-    finalColor = paintColor;
+if (wearMask > 0.05) {  // Changed from 0.01 to 0.05 to require more wear before showing base material
+  // Base material color - what you see when paint wears off
+  vec3 baseMaterial = vec3(0.25, 0.25, 0.25);
+  
+  // Add some variation based on the base color
+  baseMaterial = mix(baseMaterial, baseColor.rgb * 0.4, 0.3);
+  
+  // Add grunge for more realistic wear patterns
+  if (hasGrungeTexture > 0.5) {
+    float grungeMask = grunge.r * wearAmount * 0.3;
+    wearMask = max(wearMask, grungeMask);
   }
+  
+  // Blend from paint to base material based on how worn it is
+  finalColor = mix(paintColor, baseMaterial, wearMask);
+  
+} else {
+  finalColor = paintColor; // Use pure paint color with no wear
+}
   
   // Apply color adjustments if needed
   if (colorAdjustment > 0.0) {
