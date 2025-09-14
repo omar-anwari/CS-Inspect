@@ -108,12 +108,14 @@ interface InspectToolProps {
   onInspectSubmit?: (link: string) => void;
 }
 
+// After the DEFAULT_INSPECT_LINK, add this configuration
+const DEFAULT_INSPECT_LINK = "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20S76561198272588138A45261489134D3056361142884239973";
+
+// Configuration for welcome message behavior
+const SHOW_WELCOME_FOR_EVERYONE = true; // Set to true to show for everyone, false for only new users
+
 // Main component for the CS:GO skin inspect tool. This is where the magic (and the bugs) happen.
-const InspectTool: React.FC<InspectToolProps> = ({
-  inspectLink,
-  onError,
-  onInspectSubmit
-}) => {
+export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspectLink, onError, onInspectSubmit }) => {
   // Refs for poking the ModelViewer and screenshotting the whole mess
   const modelViewerRef = useRef<any>(null);
   const screenshotRef = useRef<HTMLDivElement>(null);
@@ -123,7 +125,7 @@ const InspectTool: React.FC<InspectToolProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState<string>('transparent');
-  const [currentInspectLink, setCurrentInspectLink] = useState<string | undefined>(inspectLink);
+  const [currentInspectLink, setCurrentInspectLink] = useState<string | undefined>(propInspectLink);
   const [inspectHistory, setInspectHistory] = useState<HistoryItem[]>([]);
   const [showDetails, setShowDetails] = useState<boolean>(true);
   const [isAutoRotate, setIsAutoRotate] = useState<boolean>(true);
@@ -231,10 +233,10 @@ const InspectTool: React.FC<InspectToolProps> = ({
 
   // Keep inspectLink in sync with prop
   useEffect(() => {
-    if (inspectLink !== currentInspectLink) {
-      setCurrentInspectLink(inspectLink);
+    if (propInspectLink !== currentInspectLink) {
+      setCurrentInspectLink(propInspectLink);
     }
-  }, [inspectLink]);
+  }, [propInspectLink]);
 
   // Fetch item data from the API and update state. If it fails, I broke it, but at least you get an error message.
   useEffect(() => {
@@ -287,6 +289,43 @@ const InspectTool: React.FC<InspectToolProps> = ({
 
     fetchItemData();
   }, [currentInspectLink, onError]);
+
+  // Always load the default skin if there's no inspect link
+  useEffect(() => {
+    if (!currentInspectLink) {
+      setCurrentInspectLink(DEFAULT_INSPECT_LINK);
+      if (onInspectSubmit) {
+        onInspectSubmit(DEFAULT_INSPECT_LINK);
+      }
+    }
+  }, []);
+
+  // Add state to track if user is new
+  const [isFirstVisit, setIsFirstVisit] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  // Check if it's the user's first visit
+  useEffect(() => {
+    if (!SHOW_WELCOME_FOR_EVERYONE) {
+      const hasVisited = localStorage.getItem('hasVisitedBefore');
+      if (!hasVisited) {
+        setIsFirstVisit(true);
+        localStorage.setItem('hasVisitedBefore', 'true');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (itemData) {
+      if (SHOW_WELCOME_FOR_EVERYONE) {
+        // Show for everyone
+        setShowWelcome(true);
+      } else if (isFirstVisit) {
+        // Show only for first-time visitors
+        setShowWelcome(true);
+      }
+    }
+  }, [itemData, isFirstVisit]);
 
   // --- UI Rendering Section ---
 
@@ -646,6 +685,58 @@ const InspectTool: React.FC<InspectToolProps> = ({
           </div>
         </div>,
         document.body
+      )}
+
+      {showWelcome && (
+        <div className="welcome-overlay" onClick={() => setShowWelcome(false)}>
+          <div className="welcome-message" onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="welcome-close-btn" 
+              onClick={() => setShowWelcome(false)}
+              aria-label="Close welcome message"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            <h3>Welcome to my 3D CS Skin <br /> Inspecting Tool</h3>
+            <p className="welcome-description">View your CS skins in your browser with detailed info.</p>
+            
+            <div className="welcome-features">
+              <p className="welcome-features-intro">Things you can do/see with my tool:</p>
+              
+              <div className="welcome-feature">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M1 12S5 4 12 4S23 12 23 12S19 20 12 20S1 12 1 12Z" stroke="currentColor" strokeWidth="1.5"/>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5"/>
+                </svg>
+                <span>360° 3D View</span>
+              </div>
+              <div className="welcome-feature">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9 11L12 14L22 4M21 12V19C21 20.1046 20.1046 21 19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>Float & Pattern Info</span>
+              </div>
+              <div className="welcome-feature">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="3" y="3" width="7" height="7" stroke="currentColor" strokeWidth="1.5"/>
+                  <rect x="14" y="3" width="7" height="7" stroke="currentColor" strokeWidth="1.5"/>
+                  <rect x="14" y="14" width="7" height="7" stroke="currentColor" strokeWidth="1.5"/>
+                  <rect x="3" y="14" width="7" height="7" stroke="currentColor" strokeWidth="1.5"/>
+                </svg>
+                <span>Stickers & Charm Info</span>
+              </div>
+            </div>
+            
+            <div className="welcome-actions">
+              <button className="welcome-btn-primary" onClick={() => setShowWelcome(false)}>
+                Get Started
+              </button>
+              <p className="welcome-hint">Paste any CS2 inspect link in the field above</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
