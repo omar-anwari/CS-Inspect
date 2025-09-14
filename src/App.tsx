@@ -6,7 +6,6 @@ import './theme-dark.css';
 import html2canvas from 'html2canvas';
 import InspectTool from './components/InspectTool'; // Sidebar for item info, figure out images for stickers and keychains
 import ControlsBar from './components/ControlsBar'; // Control bar thing
-import TextureLoadingTest from './components/TextureLoadingTest'; // For testing textures, remove later
 
 
 // Types for stickers, keychains, etc. Add more if needed
