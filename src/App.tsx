@@ -17,7 +17,7 @@ interface Sticker {
   imageurl: string;
   rotation?: number;
   offset_x?: number;
-  offset_y?:number;
+  offset_y?: number;
   wear?: number;
 }
 
@@ -74,41 +74,31 @@ const App: React.FC = () => {
 
 
   // iframe hack to get around CORS, no idea if this works
+  // I think I fixed it with headers
   useEffect(() => {
-    const corsProxy = document.createElement('iframe');
-    corsProxy.style.display = 'none';
-    corsProxy.src = 'https://cstool.omaranwari.com/';
-    document.body.appendChild(corsProxy);
-    corsProxy.onload = () => {
-      setIsInitialized(true);
-      // Model validation, probably doesn't do anything
-      setTimeout(async () => {
-        console.log('Running model validation...');
-      }, 2000);
-    };
-    return () => {
-      document.body.removeChild(corsProxy);
-    };
+    setIsInitialized(true);
   }, []);
 
 
   // Fetches the item from the API, sometimes breaks
   const handleFetchItem = async () => {
     if (!inspectLink) return;
-    setErrorMessage(null);
-    // InspectTool does the real work, this is just for legacy reasons
-    setErrorMessage(null);
+    setErrorMessage(null); // Keep this one
+
     try {
       const response = await fetch(
-        `https://cstool.omaranwari.com/?url=${encodeURIComponent(inspectLink)}`
+        `https://cors-anywhere.com/https://cstool.omaranwari.com/?url=${encodeURIComponent(inspectLink)}`
       );
+
       if (!response.ok) {
         const text = await response.text();
         throw new Error(`Fetch failed: ${response.status} ${response.statusText} - ${text}`);
       }
+
       const data = await response.json();
+
       if (data.iteminfo && data.iteminfo.full_item_name) {
-        // Try to preload the model, doesn't always work
+        // Try to preload the model
         const baseWeaponName = data.iteminfo.full_item_name.split('|')[0].trim();
         try {
           const { ModelPreloader } = require('./utils/modelPathResolver');
@@ -116,19 +106,19 @@ const App: React.FC = () => {
         } catch (err) {
           console.warn('Model preloading failed:', err);
         }
-        setFetchedItems(prevItems => [...prevItems, data.iteminfo]);
-        setSelectedIndex(fetchedItems.length);
+
+        setFetchedItems(prev => {
+          const next = [...prev, data.iteminfo];
+          setSelectedIndex(next.length - 1);
+          return next;
+        });
       }
-      setFetchedItems(prev => {
-        const next = [...prev, data.iteminfo];
-        setSelectedIndex(next.length - 1);
-        return next;
-      });
     } catch (err: any) {
       console.error('Error fetching item:', err);
       let userMessage = err.message || 'Unknown error occurred';
+      // Update this message since CORS is fixed
       if (userMessage.includes('Failed to fetch')) {
-        userMessage = 'CORS is being annoying, try clicking Inspect Item again.';
+        userMessage = 'Connection error. Please check your internet and try again.';
       }
       setErrorMessage(userMessage);
     }
@@ -161,9 +151,9 @@ const App: React.FC = () => {
 
 
   // Wait for the iframe hack to load
-  if (!isInitialized) {
-    return <div className="loading-screen">Initializing...</div>;
-  }
+  // if (!isInitialized) {
+  //   return <div className="loading-screen">Initializing...</div>;
+  // }
 
   return (
     <div
@@ -192,10 +182,10 @@ const App: React.FC = () => {
             <h3 className="background-title">Choose Background</h3>
             <button className="close-btn" onClick={() => setShowBackgroundSelector(false)}>×</button>
           </div>
-          
+
           <div className="background-grid">
             {BACKGROUND_OPTIONS.map((bg, index) => (
-              <div 
+              <div
                 key={index}
                 className={`background-item ${bg.value === bgPreset ? 'selected' : ''}`}
                 onClick={() => setBgPreset(bg.value)}
@@ -205,7 +195,7 @@ const App: React.FC = () => {
               </div>
             ))}
           </div>
-          
+
           <div className="background-actions">
             <button className="reset-btn" onClick={() => setBgPreset('')}>Reset Background</button>
           </div>
