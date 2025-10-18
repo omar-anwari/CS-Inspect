@@ -253,7 +253,7 @@ export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspe
 
         // Fetch item data from the API
         const response = await fetch(
-          `https://cors-anywhere.com/https://cstool.omaranwari.com/?url=${encodeURIComponent(currentInspectLink)}`
+          `https://cstool.omaranwari.com/?url=${encodeURIComponent(currentInspectLink)}`
         );
 
         if (!response.ok) {

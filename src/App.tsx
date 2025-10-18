@@ -87,7 +87,7 @@ const App: React.FC = () => {
 
     try {
       const response = await fetch(
-        `https://cors-anywhere.com/https://cstool.omaranwari.com/?url=${encodeURIComponent(inspectLink)}`
+        `https://cstool.omaranwari.com/?url=${encodeURIComponent(inspectLink)}`
       );
 
       if (!response.ok) {
