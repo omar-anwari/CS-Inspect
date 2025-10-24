@@ -57,7 +57,11 @@ interface HistoryItem {
 }
 // Helper to extract phase/variant from imageurl or skin name
 function getPhaseOrVariant(item: ItemInfo): string {
-  // Try to extract from imageurl first
+  const fullName = item.full_item_name ?? '';
+  if (!fullName) {
+    return '';
+  }
+
   const phaseRegex = /_(phase[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)_/i;
   if (item.imageurl) {
     const match = item.imageurl.match(phaseRegex);
@@ -65,40 +69,35 @@ function getPhaseOrVariant(item: ItemInfo): string {
       return match[1].toLowerCase();
     }
   }
-  // Fallback to skin name
-  let skinName = item.full_item_name;
+
+  let skinName = fullName;
   if (skinName.includes('|')) {
     skinName = skinName.split('|')[1].replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
   }
   const phaseMatch = skinName.match(/(phase\s*[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)$/i);
-  if (phaseMatch) {
-    return phaseMatch[1].toLowerCase().replace(/\s+/g, '');
-  }
-  return '';
+  return phaseMatch ? phaseMatch[1].toLowerCase().replace(/\s+/g, '') : '';
 }
 
-// Helper to build normalized skin name for info/history
 function getNormalizedSkinName(item: ItemInfo): string {
-  let weaponName = '';
-  if (item.full_item_name.includes('|')) {
-    weaponName = item.full_item_name.split('|')[0].trim().toLowerCase();
-    weaponName = weaponName.replace(/^stattrak(™|tm)?\s*/i, '');
-    weaponName = weaponName.replace(/[^a-z0-9]/g, '');
+  const fullName = item.full_item_name ?? '';
+  if (!fullName) {
+    return '';
   }
-  let skinNameOnly = item.full_item_name;
-  if (skinNameOnly.includes('|')) {
-    skinNameOnly = skinNameOnly.split('|')[1].trim();
-  }
-  skinNameOnly = skinNameOnly.replace(/^stattrak(™|tm)?\s*/i, '');
-  skinNameOnly = skinNameOnly.replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
-  let phase = getPhaseOrVariant(item);
+
+  const [weaponRaw = '', skinRaw = ''] = fullName.split('|');
+  const weaponName = weaponRaw.replace(/^stattrak(™|tm)?\s*/i, '').replace(/[^a-z0-9]/g, '').trim().toLowerCase();
+  let skinNameOnly = skinRaw.trim()
+    .replace(/^stattrak(™|tm)?\s*/i, '')
+    .replace(/\s*\([^)]*\).*$/, '')
+    .toLowerCase();
+
+  const phase = getPhaseOrVariant(item);
   if (phase) {
     skinNameOnly = skinNameOnly.replace(phase, '').trim();
   }
-  skinNameOnly = skinNameOnly.replace(/[^a-z0-9]/g, '');
-  let normalized = weaponName + skinNameOnly + (phase ? phase : '');
-  if (!weaponName) normalized = skinNameOnly + (phase ? phase : '');
-  return normalized;
+
+  const normalizedSkin = skinNameOnly.replace(/[^a-z0-9]/g, '');
+  return (weaponName || '') + normalizedSkin + (phase || '');
 }
 
 // Props for InspectTool. You probably won't need to touch these unless you're breaking things on purpose.
