@@ -7,6 +7,7 @@ import ModelViewer from './ModelViewer';
 import InspectLinkInput from './InspectLinkInput';
 import './InspectTool.css';
 import html2canvas from 'html2canvas';
+import { getStickerImageUrl, getKeychainImageUrl } from '../utils/stickerImageLoader';
 
 // Sticker: All the stuff you can slap on a gun to make it look more expensive (or more cursed).
 interface Sticker {
@@ -131,6 +132,10 @@ export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspe
   const [isTakingScreenshot, setIsTakingScreenshot] = useState<boolean>(false);
   const [showBackgroundSelector, setShowBackgroundSelector] = useState(false);
   const [pendingBackground, setPendingBackground] = useState<string | null>(null);
+
+  // Add state for sticker/keychain images
+  const [stickerImages, setStickerImages] = useState<Map<number, string>>(new Map());
+  const [keychainImages, setKeychainImages] = useState<Map<number, string>>(new Map());
 
   // Can't remember if I'm using this or the one in app.tsx, so let's just keep it here
   const BACKGROUND_OPTIONS = [
@@ -325,6 +330,53 @@ export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspe
       }
     }
   }, [itemData, isFirstVisit]);
+
+  // Load sticker and keychain images when itemData changes
+  useEffect(() => {
+    const loadStickerImages = async () => {
+      if (!itemData?.stickers || itemData.stickers.length === 0) {
+        setStickerImages(new Map());
+        return;
+      }
+
+      const imageMap = new Map<number, string>();
+      
+      for (const sticker of itemData.stickers) {
+        if (sticker.name) {
+          const imageUrl = await getStickerImageUrl(sticker.name);
+          if (imageUrl) {
+            imageMap.set(sticker.slot, imageUrl);
+          }
+        }
+      }
+      
+      setStickerImages(imageMap);
+    };
+
+    const loadKeychainImages = async () => {
+      if (!itemData?.keychains || itemData.keychains.length === 0) {
+        setKeychainImages(new Map());
+        return;
+      }
+
+      const imageMap = new Map<number, string>();
+      
+      for (let i = 0; i < itemData.keychains.length; i++) {
+        const keychain = itemData.keychains[i];
+        if (keychain.name) {
+          const imageUrl = await getKeychainImageUrl(keychain.name);
+          if (imageUrl) {
+            imageMap.set(i, imageUrl);
+          }
+        }
+      }
+      
+      setKeychainImages(imageMap);
+    };
+
+    loadStickerImages();
+    loadKeychainImages();
+  }, [itemData]);
 
   // --- UI Rendering Section ---
 
@@ -581,28 +633,35 @@ export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspe
           </div>
           {/* Stickers section */}
           {itemData.stickers && itemData.stickers.length > 0 && (
-            <div className="stickers-container">
+            <div className="applied-stickers-section stickers-container">
               <h3>Applied Stickers</h3>
               <div className="stickers-grid">
-                {itemData.stickers.map((sticker) => (
-                  <div key={`sticker-${sticker.slot}`} className="sticker-item">
-                    <img 
-                      src={sticker.imageurl || 'https://placehold.co/400'} 
-                      alt={sticker.name}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://placehold.co/400';
-                      }}
-                    />
-                    <span>{sticker.name}</span>
-                    {sticker.wear !== undefined && (
-                      <span className="sticker-wear">
-                        <div className="wear-indicator">
-                          <div className="wear-bar" style={{ width: `${sticker.wear * 100}%` }}></div>
+                {itemData.stickers.map((sticker, index) => (
+                  <div key={index} className="sticker-item">
+                    <div className="sticker-image-container">
+                      {stickerImages.get(sticker.slot) ? (
+                        <img 
+                          src={stickerImages.get(sticker.slot)} 
+                          alt={sticker.name}
+                          onError={(e) => {
+                            // Fallback to placeholder on error
+                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IiMzMzMiLz4KICA8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEyIiBmaWxsPSIjOTk5Ij5TdGlja2VyPC90ZXh0Pgo8L3N2Zz4=';
+                          }}
+                        />
+                      ) : (
+                        <div className="sticker-placeholder">
+                          <span>Loading...</span>
                         </div>
-                        {(sticker.wear * 100).toFixed(1)}% worn
-                      </span>
-                    )}
-                  </div>                ))}
+                      )}
+                    </div>
+                    <div className="sticker-info">
+                      <p className="sticker-name">{sticker.name}</p>
+                      {sticker.wear !== undefined && (
+                        <p className="sticker-wear">Wear: {(sticker.wear * 100).toFixed(1)}%</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -611,19 +670,30 @@ export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspe
             <div className="keychains-container">
               <h3>Attached Keychains</h3>
               <div className="keychains-grid">
-                {itemData.keychains.map((keychain) => (
-                  <div key={`keychain-${keychain.slot}`} className="keychain-item">
-                    <img 
-                      src={keychain.imageurl || 'https://placehold.co/400'} 
-                      alt={keychain.name} 
-                      className="keychain-image"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://placehold.co/400';
-                      }}
-                    />
+                {itemData.keychains.map((keychain, index) => (
+                  <div key={index} className="keychain-item">
+                    <div className="keychain-image-container">
+                      {keychainImages.get(index) ? (
+                        <img 
+                          className="keychain-image"
+                          src={keychainImages.get(index)} 
+                          alt={keychain.name}
+                          onError={(e) => {
+                            // Fallback to placeholder on error
+                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1zbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IiMzMzMiLz4KICA8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRzZSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEwIiBmaWxsPSIjOTk5Ij5LZXljaGFpbjwvdGV4dD4KPC9zdmc+';
+                          }}
+                        />
+                      ) : (
+                        <div className="keychain-placeholder">
+                          <span>Loading...</span>
+                        </div>
+                      )}
+                    </div>
                     <div className="keychain-content">
-                      <span className="keychain-name">{keychain.name}</span>
-                      <div className="keychain-pattern">Pattern: {keychain.pattern}</div>
+                      <p className="keychain-name">{keychain.name}</p>
+                      {keychain.pattern && (
+                        <p className="keychain-pattern">{keychain.pattern}</p>
+                      )}
                     </div>
                   </div>
                 ))}

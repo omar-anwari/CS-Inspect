@@ -4,11 +4,11 @@ import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 import './theme-dark.css';
 import html2canvas from 'html2canvas';
-import InspectTool from './components/InspectTool'; // Sidebar for item info, figure out images for stickers and keychains
+import InspectTool from './components/InspectTool'; // Sidebar for item info, figure out images for stickers and charms
 import ControlsBar from './components/ControlsBar'; // Control bar thing
 
 
-// Types for stickers, keychains, etc. Add more if needed
+// Types for stickers, charms, etc. Add more if needed
 interface Sticker {
   slot: number;
   stickerId: number;
