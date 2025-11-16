@@ -249,4 +249,8 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     p2000urbanhazard: 'cu_p2000_urban_hazard',
     p2000pathfinder: 'sp_labyrinth2', //broken
     p2000coachclass: 'cu_luggage_p2000',
+
+    // TEST
+    // awpduality: 'gs_awp_limbo_snake',
+    // m4a4inlivingcolor: 'cu_m4a4_love'
 };

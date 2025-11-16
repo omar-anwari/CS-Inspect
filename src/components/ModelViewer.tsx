@@ -403,8 +403,9 @@ const WeaponModel: React.FC<{
           metalness: materialData.metalnessPath,
           ao: materialData.aoPath,
           mask: materialData.maskPath,
-          wear: materialData.wearPath // <-- Correct property for wear mask
+          wear: materialData.wearPath
         };
+        
         // Remove undefined values and cast to Record<string, string>
         const textures: Record<string, string> = Object.fromEntries(
           Object.entries(texturesRaw).filter(([_, v]) => typeof v === 'string' && v !== undefined)
@@ -416,7 +417,8 @@ const WeaponModel: React.FC<{
         let meshCount = 0;
         scene.traverse((child: THREE.Object3D) => {
           if (child instanceof THREE.Mesh) {
-            meshCount++; (async () => {
+            meshCount++;
+            (async () => {
               try {
                 // Validate mesh before applying textures
                 if (!child.geometry || child.geometry.attributes.position?.count === 0) {
@@ -424,29 +426,68 @@ const WeaponModel: React.FC<{
                   return;
                 }
 
-                // Apply a temporary visible material while loading
-                if (!child.material || child.material.visible === false) {
-                  child.material = new THREE.MeshStandardMaterial({
-                    color: new THREE.Color(0x666666),
-                    roughness: 0.5,
-                    metalness: 0.3,
-                    visible: true
-                  });
-                }
+                // Store original material properties before applying new textures
+                const originalMaterial = child.material as THREE.MeshStandardMaterial;
+                const originalMetalness = originalMaterial?.metalness ?? 0.5;
+                const originalRoughness = originalMaterial?.roughness ?? 0.5;
 
-                // Pass the wear value from the API (itemData?.floatvalue) to the texture loader
+                // Apply textures with preserved lighting properties
                 await applyExtractedTexturesToMesh(child, textures, materialData, itemData?.floatvalue);
 
-                // Ensure the mesh is still visible after material application
-                if (child.material) {
-                  child.material.visible = true;
-                  child.material.needsUpdate = true;
+                // Ensure the material preserves proper rendering properties
+                if (child.material instanceof THREE.MeshStandardMaterial) {
+                  const material = child.material;
+                  
+                  // Ensure material responds to lighting
+                  material.needsUpdate = true;
+                  material.flatShading = false; // Ensure smooth shading
+                  
+                  // Set proper metalness and roughness if not already set by textures
+                  if (!material.metalnessMap) {
+                    material.metalness = materialData.parameters?.metalness ?? originalMetalness ?? 0.7;
+                  }
+                  if (!material.roughnessMap) {
+                    material.roughness = materialData.parameters?.roughness ?? originalRoughness ?? 0.5;
+                  }
+                  
+                  // Ensure normal map is properly configured
+                  if (material.normalMap) {
+                    material.normalScale.set(0.5, 0.5); // Reduced from 1.5 to minimize artifacts
+                    material.normalMapType = THREE.TangentSpaceNormalMap;
+                  }
+                  
+                  // Ensure AO map is properly applied
+                  if (material.aoMap) {
+                    material.aoMapIntensity = 0.6; // Reduced from 1.0
+                  }
+                  
+                  // Reduced environment map intensity
+                  material.envMapIntensity = 0.6; // Reduced from 1.0
+                  
+                  // Ensure vertex colors don't interfere
+                  material.vertexColors = false;
+                  
+                  // Make sure the material is visible and not transparent unless needed
+                  material.visible = true;
+                  material.transparent = materialData.parameters?.transparent ?? false;
+                  material.opacity = materialData.parameters?.opacity ?? 1.0;
+                  
+                  // Set proper side rendering
+                  material.side = THREE.FrontSide;
+                  
+                  // Ensure the material updates
+                  material.needsUpdate = true;
+                }
 
-                  // --- Make normal map even more intense if present ---
-                  if ('normalMap' in child.material && child.material.normalMap) {
-                    // Dramatically increase normalScale
-                    (child.material as any).normalScale = new THREE.Vector2(1, 1);
-                    child.material.needsUpdate = true;
+                // Ensure geometry normals are computed
+                if (child.geometry && !child.geometry.attributes.normal) {
+                  child.geometry.computeVertexNormals();
+                }
+                
+                // Recompute tangents if we have normal maps
+                if (child.material instanceof THREE.MeshStandardMaterial && child.material.normalMap) {
+                  if (child.geometry.hasAttribute('uv') && child.geometry.hasAttribute('normal')) {
+                    child.geometry.computeTangents();
                   }
                 }
 
@@ -454,14 +495,17 @@ const WeaponModel: React.FC<{
               } catch (err) {
                 console.error(`❌ Error in applyExtractedTexturesToMesh for mesh ${child.name}:`, err);
 
-                // Apply a visible fallback material if texture application fails
-                child.material = new THREE.MeshStandardMaterial({
-                  color: new THREE.Color(0x996666), // Reddish to indicate error
-                  roughness: 0.6,
-                  metalness: 0.2,
-                  visible: true
-                });
-                console.log(`🔧 Applied error fallback material to mesh: ${child.name}`);
+                // Apply a visible fallback material with proper lighting if texture application fails
+                if (child instanceof THREE.Mesh) {
+                  child.material = new THREE.MeshStandardMaterial({
+                    color: new THREE.Color(0x888888),
+                    roughness: 0.6,
+                    metalness: 0.7,
+                    visible: true,
+                    flatShading: false
+                  });
+                  console.log(`🔧 Applied error fallback material to mesh: ${child.name}`);
+                }
               }
             })();
           }
@@ -699,59 +743,33 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
     <div ref={containerRef} style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
       <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
         <CameraControlsManager />
-        {/* Studio Lighting Setup */}
-        {/* 1. Key Light - Main illumination from slightly above and to the side */}
+        {/* Enhanced Studio Lighting Setup for better material visibility */}
+        
+        {/* Improved lighting setup to reduce shine artifacts */}
+        
+        {/* Main directional light - reduced intensity */}
         <directionalLight
-          position={[5, 8, 5]}
+          position={[5, 5, 5]}
           intensity={1.2}
-          color={0xfff5e6} // Warm white
+          color={0xffffff}
           castShadow
-          shadow-mapSize={[2048, 2048]}
-          shadow-camera-left={-10}
-          shadow-camera-right={10}
-          shadow-camera-top={10}
-          shadow-camera-bottom={-10}
         />
 
-        {/* 2. Fill Light - Softer light from opposite side to reduce shadows */}
+        {/* Fill light */}
         <directionalLight
-          position={[-5, 5, 3]}
-          intensity={0.5}
-          color={0xe6f2ff} // Cool white for contrast
-        />
-
-        {/* 3. Rim/Back Light - Creates edge definition */}
-        <directionalLight
-          position={[0, 5, -8]}
+          position={[-5, 3, -3]}
           intensity={0.8}
           color={0xffffff}
         />
 
-        {/* 4. Top Light - Subtle overhead illumination */}
-        <directionalLight
-          position={[0, 10, 0]}
-          intensity={0.3}
-          color={0xffffff}
-        />
+        {/* Softer ambient light */}
+        <ambientLight intensity={0.6} />
 
-        {/* 5. Subtle ambient for base illumination */}
-        <ambientLight intensity={0.2} color={0xf0f0f0} />
-
-        {/* 6. Hemisphere light for realistic sky/ground color bleeding */}
+        {/* Reduced hemisphere light */}
         <hemisphereLight
-          color={0xffffff} // Sky color
-          groundColor={0x606060} // Ground color
-          intensity={0.3}
-        />
-
-        {/* Optional: Add spot lights for dramatic effect */}
-        <spotLight
-          position={[10, 10, 5]}
-          angle={0.3}
-          penumbra={0.5}
-          intensity={0.5}
-          color={0xfff0e0}
-          castShadow
+          color={0xffffff}
+          groundColor={0x444444}
+          intensity={0.4}
         />
 
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
@@ -768,11 +786,6 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
           enableRotate={true}
         />
         {showStats && <Stats />}
-        <EffectComposer>
-          <Bloom intensity={0.3} luminanceThreshold={0.8} />
-          <ChromaticAberration offset={[0.0005, 0.0005]} />
-          <Vignette offset={0.2} darkness={0.3} />
-        </EffectComposer>
       </Canvas>
     </div>
   );

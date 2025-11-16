@@ -28,6 +28,14 @@ export interface CSSkinShaderUniforms {
   patternScale: number;
   patternRotation: number;
   colorAdjustment: number;
+  colorBrightness: number;
+  wearSoftness: number;
+  paintDurability: THREE.Vector4;
+  paintMetalnessValues: THREE.Vector4;
+  paintRoughnessValues: THREE.Vector4;
+  paintAlbedoLevels: THREE.Vector3;
+  metallicPaintAlbedoLevels: THREE.Vector3;
+  pearlescentScale: number;
 
   // Wear remapping - controls how scratched up things get
   wearRemapMin: number;
@@ -107,9 +115,18 @@ uniform float patternScale;
 uniform float patternRotation;
 uniform float colorAdjustment;
 uniform float colorBrightness;
+uniform float wearSoftness;
+uniform vec4 paintDurability;
+uniform vec4 paintMetalnessValues;
+uniform vec4 paintRoughnessValues;
+uniform vec3 paintAlbedoLevels;
+uniform vec3 metallicPaintAlbedoLevels;
+uniform float pearlescentScale;
+uniform vec4 colors[4];
 
 // Color slots for those fancy multi-color skins
-uniform vec4 colors[4];
+uniform float wearRemapMin;
+uniform float wearRemapMax;
 
 // Texture scaling and positioning (because nothing's ever the right size)
 uniform vec2 patternOffset;
@@ -132,25 +149,11 @@ uniform float hasAoTexture;
 uniform float hasMaskTexture;
 uniform float hasWearTexture;
 uniform float hasGrungeTexture;
-uniform float wearRemapMin;
-uniform float wearRemapMax;
+uniform float hasGlitterNormalTexture;
+uniform float hasGlitterMaskTexture;
 
-// Wear parameters - how beat up this thing gets
-uniform float wearSoftness;
-uniform vec4 paintDurability;
+const vec3 LUMA_WEIGHTS = vec3(0.2125, 0.7154, 0.0721);
 
-// Paint style constants - trying to match CS:GO's paint styles (fingers crossed)
-#define PAINT_STYLE_SOLID_COLOR 0.0
-#define PAINT_STYLE_HYDROGRAPHIC 1.0
-#define PAINT_STYLE_SPRAY_PAINT 2.0
-#define PAINT_STYLE_ANODIZED 3.0
-#define PAINT_STYLE_ANODIZED_MULTI 4.0
-#define PAINT_STYLE_CUSTOM_PAINT 5.0
-#define PAINT_STYLE_ANTIQUED 6.0
-#define PAINT_STYLE_GUNSMITH 7.0
-#define PAINT_STYLE_PEARLESCENT 8.0
-
-// Safe texture sampling - won't crash if texture doesn't exist
 vec4 sampleTexture(sampler2D tex, vec2 uv, float hasTexture, vec4 defaultValue) {
   if (hasTexture > 0.5) {
     return texture2D(tex, uv);
@@ -158,7 +161,6 @@ vec4 sampleTexture(sampler2D tex, vec2 uv, float hasTexture, vec4 defaultValue) 
   return defaultValue;
 }
 
-// Utility functions - boring math stuff I need for blending
 vec2 rotateUV(vec2 uv, float angle) {
   float s = sin(angle);
   float c = cos(angle);
@@ -166,317 +168,184 @@ vec2 rotateUV(vec2 uv, float angle) {
   return rotMatrix * (uv - 0.5) + 0.5;
 }
 
-vec3 blendOverlay(vec3 base, vec3 overlay) {
-  return mix(
-    2.0 * base * overlay,
-    1.0 - 2.0 * (1.0 - base) * (1.0 - overlay),
-    step(0.5, base)
-  );
-}
-
-vec3 blendMultiply(vec3 base, vec3 overlay) {
-  return base * overlay;
-}
-
-vec3 blendScreen(vec3 base, vec3 overlay) {
-  return 1.0 - (1.0 - base) * (1.0 - overlay);
-}
-
-vec3 blendSoftLight(vec3 base, vec3 overlay) {
-  return mix(
-    2.0 * base * overlay + base * base * (1.0 - 2.0 * overlay),
-    sqrt(base) * (2.0 * overlay - 1.0) + 2.0 * base * (1.0 - overlay),
-    step(0.5, overlay)
-  );
-}
-
-vec3 adjustSaturation(vec3 color, float saturation) {
-  float gray = dot(color, vec3(0.299, 0.587, 0.114));
-  return mix(vec3(gray), color, saturation);
-}
-
-// Wear calculation function - makes things look properly beaten up like CS:GO skins
-float calculateWearMask(vec2 uv, float wearAmount) {
-  if (hasWearTexture < 0.5 || wearAmount <= 0.0) {
-    return 0.0;
-  }
-
-  // Create properly mirrored UV mapping for back faces
-  vec2 wearUV = uv;
+vec2 mirroredUV(vec2 uv) {
   if (!gl_FrontFacing) {
-    // Only mirror X coordinate for proper weapon side mirroring
-    wearUV.x = 1.0 - wearUV.x;
+    uv.x = 1.0 - uv.x;
   }
-
-  // Remap wear amount from [0,1] to [wearRemapMin, wearRemapMax]
-  float remappedWearAmount = mix(wearRemapMin, wearRemapMax, wearAmount);
-
-  // Sample the wear texture - INVERTED: dark areas will become scratches that show metal
-  float wearSample = texture2D(wearTexture, wearUV).r;
-  
-  // INVERTED LOGIC: Now black/dark parts (< threshold) get cut through to metal
-  float threshold = 0.2; // Lower threshold to catch dark parts of the texture
-  float binaryWear = 1.0 - step(threshold, wearSample);
-  
-  // Amplify the contrast in the wear texture to get cleaner cuts
-  binaryWear = pow(binaryWear, 0.7); // Makes the transition sharper
-  
-  // Scale wear intensity based on the float value
-  float wearIntensity = pow(remappedWearAmount, 0.8) * 1.2; // Amplify wear effect
-  
-  // Combine the binary wear with the wear intensity
-  float wearMask = binaryWear * wearIntensity;
-
-  // Scale wear effect based on wear ranges - make Field-Tested and above much more aggressive
-  if (remappedWearAmount < 0.07) {
-    // Factory New (0.00-0.07) - absolutely no wear
-    return 0.0;
-  } else if (remappedWearAmount < 0.15) {
-    // Minimal Wear (0.07-0.15) - very slight wear
-    wearMask *= 0.7;
-  } else if (remappedWearAmount < 0.38) {
-    // Field Tested (0.15-0.38) - moderate wear with actual metal showing
-    wearMask *= 2.0; // Much stronger effect
-  } else if (remappedWearAmount < 0.45) {
-    // Well Worn (0.38-0.45) - significant wear
-    wearMask *= 3.0; // Even stronger
-  } else {
-    // Battle Scarred (0.45-1.00) - full wear effect
-    wearMask *= 4.0; // Maximum wear effect
-  }
-  
-  return clamp(wearMask, 0.0, 1.0);
+  return uv;
 }
 
-// Main compositing function - this is where all the magic happens
-vec4 compositeSkin() {
-  vec2 uv = vUv;
-  
-  // Mirror UV coordinates for back faces to prevent stretching
-  // This helps when the model has wonky UVs on one side
-  if (!gl_FrontFacing) {
-    // Only mirror X coordinate for proper weapon side mirroring
-    uv.x = 1.0 - uv.x; 
-  }
-  
-  // Calculate pattern UV coordinates with scaling and rotation
-  vec2 patternUV = (uv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
-  patternUV = rotateUV(patternUV, patternRotation);
-  
-  // Sample all the textures I might need (crossing my fingers they exist)
-  vec4 baseColor = sampleTexture(colorTexture, uv, hasColorTexture, vec4(0.5, 0.5, 0.5, 1.0));
-  vec4 pattern = sampleTexture(patternTexture, patternUV, hasPatternTexture, vec4(1.0, 1.0, 1.0, 1.0));
-  vec4 mask = sampleTexture(maskTexture, uv, hasMaskTexture, vec4(0.0, 0.0, 0.0, 1.0));
-  vec4 grunge = sampleTexture(grungeTexture, uv, hasGrungeTexture, vec4(0.0, 0.0, 0.0, 1.0));
-  
-  // Start with something reasonable
-  vec3 finalColor = baseColor.rgb;
-  float finalAlpha = baseColor.a;
-  
-  // Figure out what paint style I'm dealing with (there's a lot of them)
-  vec3 paintColor = baseColor.rgb; // Default to base if nothing else works
-  
-  if (paintStyle == PAINT_STYLE_SOLID_COLOR) {
-    // Solid color - just slap on the first color (simple but effective)
-    paintColor = colors[0].rgb;
-    
-  } else if (paintStyle == PAINT_STYLE_HYDROGRAPHIC) {
-    // Hydrographic - pattern with color tinting (like those water transfer prints)
-    vec3 tintedPattern = pattern.rgb * colors[0].rgb;
-    paintColor = blendOverlay(baseColor.rgb, tintedPattern);
-    
-  } else if (paintStyle == PAINT_STYLE_SPRAY_PAINT) {
-    // Spray paint - pattern with alpha blending (stencil style stuff)
-    paintColor = mix(baseColor.rgb, pattern.rgb * colors[0].rgb, pattern.a);
-    
-  } else if (paintStyle == PAINT_STYLE_ANODIZED) {
-    // Anodized - metallic color with pattern overlay
-    vec3 anodizedColor = colors[0].rgb;
-    paintColor = blendMultiply(anodizedColor, pattern.rgb);
-    
-  } else if (paintStyle == PAINT_STYLE_ANODIZED_MULTI) {
-    // Anodized multi - blend multiple colors based on mask (the fancy Case Hardened stuff)
-    vec3 color1 = colors[0].rgb;
-    vec3 color2 = colors[1].rgb;
-    vec3 color3 = colors[2].rgb;
-    vec3 color4 = colors[3].rgb;
-    
-    // Use mask channels to pick which color goes where
-    vec3 blendedColor = color1;
-    if (hasMaskTexture > 0.5) {
-      blendedColor = mix(blendedColor, color2, mask.r);
-      blendedColor = mix(blendedColor, color3, mask.g);
-      blendedColor = mix(blendedColor, color4, mask.b);
-    }
-    
-    paintColor = blendMultiply(blendedColor, pattern.rgb);
-    
-  } else if (paintStyle == PAINT_STYLE_CUSTOM_PAINT) {
-    // Custom paint - complex pattern and color blending
-    vec3 patternColor = pattern.rgb * colors[0].rgb;
-    paintColor = blendSoftLight(baseColor.rgb, patternColor);
-    
-  } else if (paintStyle == PAINT_STYLE_ANTIQUED) {
-    // Antiqued - aged/weathered look (for those vintage vibes)
-    vec3 antiquedColor = colors[0].rgb;
-    vec3 patternBlend = blendMultiply(antiquedColor, pattern.rgb);
-    paintColor = blendOverlay(baseColor.rgb, patternBlend);
-    
-  } else if (paintStyle == PAINT_STYLE_GUNSMITH) {
-    // Gunsmith - metallic with subtle pattern
-    vec3 metallicColor = colors[0].rgb;
-    
-    // If the first color is white/near-white, I use the pattern as main color
-    if (length(metallicColor - vec3(1.0)) < 0.1) {
-      // First color is basically white, so I use pattern directly
-      if (hasPatternTexture > 0.5) {
-        paintColor = pattern.rgb;
-        // Add some metallic enhancement
-        paintColor = mix(paintColor, paintColor * vec3(1.2, 1.1, 1.0), 0.3);
-      } else {
-        // No pattern, use default gunmetal color
-        paintColor = vec3(0.4, 0.4, 0.45);
-      }
-    } else {
-      // Normal gunsmith behavior with colored base
-      if (hasPatternTexture > 0.5) {
-        vec3 patternContribution = blendScreen(metallicColor, pattern.rgb);
-        paintColor = mix(metallicColor, patternContribution, 0.3);
-      } else {
-        paintColor = metallicColor;
-      }
-    }
-    
-    // Make sure it's not completely black (that would look weird)
-    if (length(paintColor) < 0.1) {
-      paintColor = vec3(0.4, 0.4, 0.45); // Gunmetal fallback
-    }
-  } else {
-    // Fallback for unknown paint styles (like style 8 or whatever new stuff they add)
-    // Just use pattern with first color and hope for the best
-    paintColor = pattern.rgb * colors[0].rgb;
-  }
-  
-  // Calculate how beat up this thing should look
-  float wearMask = calculateWearMask(uv, wearAmount);
-  
-  // Apply wear by showing the base material underneath
-  if (wearMask > 0.01) {
-    // Base material color - make it more distinct from the paint
-    vec3 baseMaterial = vec3(0.75, 0.76, 0.78);  // Silvery metal
-    
-    // Add variation based on lighting for more realistic metal
-    vec3 normalDir = normalize(vNormal);
-    float lightInfluence = max(0.0, dot(normalDir, normalize(vec3(0.5, 1.0, 0.75))));
-    baseMaterial = mix(baseMaterial * 0.7, baseMaterial * 1.3, lightInfluence);
-    
-    // Make the wear transition extremely sharp - pure cutout effect
-    float sharpWear = step(0.25, wearMask); // Lower threshold = more metal shows through
-    
-    // Blend from paint to base material based on the sharp wear mask
-    finalColor = mix(paintColor, baseMaterial, sharpWear);
-  } else {
-    finalColor = paintColor; // Use pure paint color with no wear
-  }
-  
-  // Apply color adjustments if needed
-  if (colorAdjustment > 0.0) {
-    finalColor = adjustSaturation(finalColor, 1.0 + colorAdjustment * 0.5);
-  }
-  
-  // Apply color brightness
-  finalColor *= colorBrightness;
-
-  return vec4(finalColor, finalAlpha);
+vec2 transformPatternUV(vec2 uv) {
+  vec2 transformed = (uv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
+  return rotateUV(transformed, patternRotation);
 }
 
-// Main fragment shader - where everything comes together
+float saturate(float value) {
+  return clamp(value, 0.0, 1.0);
+}
+
+float maskDrivenValue(vec3 masks, vec4 values) {
+  float value = mix(values.x, values.y, masks.r);
+  value = mix(value, values.z, masks.g);
+  value = mix(value, values.w, masks.b);
+  return value;
+}
+
+void compositeSkin(
+  vec4 substrate,
+  vec4 maskSample,
+  vec4 patternSample,
+  vec4 aoSample,
+  vec4 wearSample,
+  vec4 grungeSample,
+  out vec4 skinColor,
+  out float wearFactor
+) {
+  vec3 maskChannels = clamp(maskSample.rgb, 0.0, 1.0);
+  float durability = maskDrivenValue(maskChannels, paintDurability);
+  float remappedWear = mix(wearRemapMin, wearRemapMax, wearAmount);
+  float softness = wearSoftness * durability;
+
+  float cavity = aoSample.r;
+  float cavityMask = aoSample.a;
+  float wearSignal = ((cavityMask + wearSample.r * cavity) * ((remappedWear * 6.0) + 1.0)) * durability;
+  wearFactor = smoothstep(0.58 - softness, 0.68 + softness, wearSignal);
+
+  float grungeFactor = (pow(max(0.0, 1.0 - cavity), 4.0) * 0.25) + (0.75 * remappedWear);
+  vec4 grunge = mix(vec4(1.0), grungeSample, vec4(grungeFactor));
+
+  vec3 basePalette = colors[0].rgb;
+  basePalette = mix(basePalette, colors[1].rgb, maskChannels.r);
+  basePalette = mix(basePalette, colors[2].rgb, maskChannels.g);
+  basePalette = mix(basePalette, colors[3].rgb, maskChannels.b);
+
+  vec3 patternPalette = vec3(0.0);
+  patternPalette += colors[0].rgb * patternSample.r;
+  patternPalette += colors[1].rgb * patternSample.g;
+  patternPalette += colors[2].rgb * patternSample.b;
+  patternPalette += colors[3].rgb * patternSample.a;
+
+  float patternMask = saturate(maskSample.a + patternSample.a);
+  vec3 palette = mix(basePalette, patternPalette, patternMask);
+  vec3 tinted = palette * grunge.rgb;
+
+  float paintMetalness = maskDrivenValue(maskChannels, paintMetalnessValues);
+  vec3 albedoLevels = mix(paintAlbedoLevels, metallicPaintAlbedoLevels, vec3(paintMetalness));
+
+  vec3 normalizedTint = normalize(max(vec3(0.0003), tinted));
+  float tintMax = max(normalizedTint.x, max(normalizedTint.y, normalizedTint.z));
+  float luma = dot(palette, LUMA_WEIGHTS);
+  float highlightControl = clamp(pow(max(tinted.x, max(tinted.y, tinted.z)), albedoLevels.y), 0.0, 1.0);
+  float highlightBase = min(albedoLevels.x, luma);
+  float highlightValue = mix(highlightBase, albedoLevels.z, highlightControl);
+  vec3 metallicResponse = (normalizedTint * highlightValue) / max(tintMax, 0.0001);
+  vec3 wearTint = mix(tinted, metallicResponse, vec3(remappedWear));
+
+  vec3 pearlescent = wearTint * (1.0 + pearlescentScale * grunge.a);
+  wearTint = mix(wearTint, pearlescent, saturate(paintMetalness));
+
+  if (colorAdjustment != 0.0) {
+    float gray = dot(wearTint, vec3(0.299, 0.587, 0.114));
+    wearTint = mix(vec3(gray), wearTint, 1.0 + colorAdjustment * 0.5);
+  }
+
+  wearTint *= colorBrightness;
+  vec3 finalPaint = mix(wearTint, substrate.rgb, vec3(wearFactor));
+  skinColor = vec4(finalPaint, substrate.a);
+}
+
+vec3 applyGlitter(vec3 color, vec2 detailUV, float wearFactor) {
+  if (hasGlitterNormalTexture < 0.5) {
+    return color;
+  }
+
+  vec4 glitterSample = texture2D(glitterNormalTexture, detailUV);
+  float glitterMask = glitterSample.a;
+  if (hasGlitterMaskTexture > 0.5) {
+    glitterMask *= texture2D(glitterMaskTexture, detailUV).r;
+  }
+
+  glitterMask *= 1.0 - wearFactor;
+  if (glitterMask <= 0.001) {
+    return color;
+  }
+
+  vec3 glitterNormal = normalize(glitterSample.rgb * 2.0 - 1.0);
+  vec3 lightDir = normalize(vec3(0.5, 1.0, 0.1));
+  vec3 viewDir = normalize(-vViewPosition);
+  float sparkle = pow(max(dot(reflect(-lightDir, glitterNormal), viewDir), 0.0), 32.0);
+  return mix(color, color + sparkle * 0.5, saturate(glitterMask));
+}
+
 void main() {
-  // Get the final skin color after all the compositing
-  vec4 skinColor = compositeSkin();
+  vec2 baseUV = mirroredUV(vUv);
+  vec2 detailUV = transformPatternUV(baseUV);
 
-  // Start with the basic surface normal
+  vec4 substrateSample = sampleTexture(colorTexture, baseUV, hasColorTexture, vec4(0.45, 0.45, 0.45, 1.0));
+  vec4 maskSample = sampleTexture(maskTexture, baseUV, hasMaskTexture, vec4(0.0, 0.0, 0.0, 1.0));
+  vec4 patternSample = sampleTexture(patternTexture, detailUV, hasPatternTexture, vec4(1.0, 1.0, 1.0, 1.0));
+  vec4 wearSample = sampleTexture(wearTexture, detailUV, hasWearTexture, vec4(0.0));
+  vec4 aoSample = sampleTexture(aoTexture, baseUV, hasAoTexture, vec4(1.0));
+  vec4 grungeSample = sampleTexture(grungeTexture, detailUV, hasGrungeTexture, vec4(1.0));
+
+  vec4 skinColor;
+  float wearFactor;
+  compositeSkin(substrateSample, maskSample, patternSample, aoSample, wearSample, grungeSample, skinColor, wearFactor);
+
   vec3 normal = normalize(vNormal);
-
-  // Apply normal map if I have one
   if (hasNormalTexture > 0.5) {
-    // I use same UV transform as pattern so bumps align with design
-    vec2 normalUV = (vUv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
-    normalUV = rotateUV(normalUV, patternRotation);
-    
-    // Flip V coordinate because normal maps are weird sometimes
-    normalUV.y = 1.0 - normalUV.y;
-    
-    vec3 normalMapSample = texture2D(normalTexture, normalUV).rgb;
-    vec3 tangentNormal = normalMapSample * 2.0 - 1.0;
-
-    // Flip Y component if it looks wrong (toggle this if needed)
+    vec3 tangentNormal = texture2D(normalTexture, detailUV).rgb * 2.0 - 1.0;
     tangentNormal.y = -tangentNormal.y;
-
-    // Apply the normal map perturbation
-    normal = normalize(normal + tangentNormal * 0.5);
+    normal = normalize(vTBN * tangentNormal);
   }
 
-  // Figure out material properties based on wear
-  float wearMask = calculateWearMask(vUv, wearAmount);
+  vec3 maskChannels = clamp(maskSample.rgb, 0.0, 1.0);
+  float paintMetalness = maskDrivenValue(maskChannels, paintMetalnessValues);
+  float roughnessFromPalette = maskDrivenValue(maskChannels, paintRoughnessValues);
 
-  // Worn areas are rougher (less shiny)
   float materialRoughness = roughness;
   if (hasRoughnessTexture > 0.5) {
-    materialRoughness *= texture2D(roughnessTexture, vUv).r;
+    materialRoughness *= texture2D(roughnessTexture, baseUV).r;
+  } else {
+    materialRoughness = mix(materialRoughness, roughnessFromPalette, 0.7);
   }
-  materialRoughness = mix(materialRoughness, 0.95, wearMask);
+  materialRoughness = mix(materialRoughness, 0.95, wearFactor);
 
-  // Worn areas show more metal underneath
   float materialMetalness = metalness;
   if (hasMetalnessTexture > 0.5) {
-    materialMetalness *= texture2D(metalnessTexture, vUv).r;
+    materialMetalness = texture2D(metalnessTexture, baseUV).r;
+  } else {
+    materialMetalness = mix(materialMetalness, paintMetalness, 0.5);
   }
-  materialMetalness = mix(materialMetalness, 0.8, wearMask);
+  materialMetalness = mix(materialMetalness, 0.85, wearFactor);
 
-  // Ambient occlusion for depth
-  float ao = 1.0;
-  if (hasAoTexture > 0.5) {
-    ao = texture2D(aoTexture, vUv).r;
-  }
+  float ao = aoSample.r;
 
-  // Basic lighting calculation (nothing fancy)
   vec3 lightDir = normalize(vec3(0.5, 1.0, 0.75));
   float NdotL = max(dot(normal, lightDir), 0.0);
 
   vec3 viewDir = normalize(-vViewPosition);
-  vec3 reflectDir = reflect(-lightDir, normal);
-  float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0 + (1.0 - materialRoughness) * 48.0);
+  vec3 halfDir = normalize(lightDir + viewDir);
+  float spec = pow(max(dot(normal, halfDir), 0.0), mix(8.0, 64.0, 1.0 - materialRoughness));
 
-  // Combine everything together
-  vec3 ambient = skinColor.rgb * mix(0.6, 0.5, wearMask);
-  vec3 diffuse = skinColor.rgb * NdotL * mix(0.7, 0.8, wearMask);
-  vec3 specular = vec3(spec) * materialMetalness * mix(0.3, 0.5, wearMask);
+  vec3 ambient = skinColor.rgb * mix(0.5, 0.6, ao);
+  vec3 diffuse = skinColor.rgb * NdotL;
+  vec3 specular = vec3(spec) * mix(0.1, 0.5, materialMetalness);
 
-  vec3 finalColor = (ambient + diffuse) * ao + specular;
+  vec3 finalColor = ambient + diffuse + specular;
+  finalColor *= mix(0.8, 1.0, ao);
+  finalColor = applyGlitter(finalColor, detailUV, wearFactor);
 
-  // Debug modes for when things break
   if (debugMode == 1.0) {
-    // Show just the pattern
-    vec2 patternUV = (vUv - 0.5) * patternTiling * patternScale + 0.5 + patternOffset;
-    patternUV = rotateUV(patternUV, patternRotation);
-    vec4 patternDebug = sampleTexture(patternTexture, patternUV, hasPatternTexture, vec4(1.0, 0.0, 1.0, 1.0));
-    finalColor = patternDebug.rgb;
+    finalColor = patternSample.rgb;
   } else if (debugMode == 2.0) {
-    // Show the mask
-    vec4 maskDebug = sampleTexture(maskTexture, vUv, hasMaskTexture, vec4(1.0, 0.0, 1.0, 1.0));
-    finalColor = maskDebug.rgb;
+    finalColor = maskSample.rgb;
   } else if (debugMode == 3.0) {
-    // Show wear texture
-    vec4 wearDebug = sampleTexture(wearTexture, vUv, hasWearTexture, vec4(1.0, 0.0, 1.0, 1.0));
-    finalColor = wearDebug.rgb;
+    finalColor = vec3(wearSample.r);
   } else if (debugMode == 4.0) {
-    // Show UV coordinates
-    finalColor = vec3(vUv, 0.0);
+    finalColor = vec3(baseUV, 0.0);
   } else if (debugMode == 5.0) {
-    // Show wear mask
-    float mask = calculateWearMask(vUv, wearAmount);
-    finalColor = vec3(mask);
+    finalColor = vec3(wearFactor);
   }
 
   gl_FragColor = vec4(finalColor, skinColor.a);
@@ -513,7 +382,9 @@ export function createCSSkinShaderMaterial(
     hasAoTexture: { value: textures.ao ? 1.0 : 0.0 },
     hasMaskTexture: { value: textures.mask ? 1.0 : 0.0 },
     hasWearTexture: { value: textures.wear ? 1.0 : 0.0 },
-    hasGrungeTexture: { value: textures.grunge ? 1.0 : 0.0 }
+    hasGrungeTexture: { value: textures.grunge ? 1.0 : 0.0 },
+    hasGlitterNormalTexture: { value: textures.glitterNormal ? 1.0 : 0.0 },
+    hasGlitterMaskTexture: { value: textures.glitterMask ? 1.0 : 0.0 }
   };
 
   const uniforms: Record<string, THREE.IUniform> = {
@@ -546,6 +417,37 @@ export function createCSSkinShaderMaterial(
         1.0 - (parameters.paintDurability?.[1] || 0),
         1.0 - (parameters.paintDurability?.[2] || 0),
         1.0 - (parameters.paintDurability?.[3] || 0)
+      )
+    },
+    pearlescentScale: { value: parameters.pearlescentScale ?? 0.0 },
+    paintMetalnessValues: {
+      value: new THREE.Vector4(
+        parameters.paintMetalnessValues?.[0] ?? 0.05,
+        parameters.paintMetalnessValues?.[1] ?? 0.25,
+        parameters.paintMetalnessValues?.[2] ?? 0.65,
+        parameters.paintMetalnessValues?.[3] ?? 0.9
+      )
+    },
+    paintRoughnessValues: {
+      value: new THREE.Vector4(
+        parameters.paintRoughnessValues?.[0] ?? 0.25,
+        parameters.paintRoughnessValues?.[1] ?? 0.4,
+        parameters.paintRoughnessValues?.[2] ?? 0.55,
+        parameters.paintRoughnessValues?.[3] ?? 0.75
+      )
+    },
+    paintAlbedoLevels: {
+      value: new THREE.Vector3(
+        parameters.paintAlbedoLevels?.[0] ?? 0.045,
+        parameters.paintAlbedoLevels?.[1] ?? 1.322,
+        parameters.paintAlbedoLevels?.[2] ?? 1.0
+      )
+    },
+    metallicPaintAlbedoLevels: {
+      value: new THREE.Vector3(
+        parameters.metallicPaintAlbedoLevels?.[0] ?? 0.08,
+        parameters.metallicPaintAlbedoLevels?.[1] ?? 1.322,
+        parameters.metallicPaintAlbedoLevels?.[2] ?? 1.0
       )
     },
     patternScale: { value: parameters.patternScale || 1.0 },
@@ -615,7 +517,9 @@ export function updateCSSkinShaderUniforms(
   // Update simple values (the easy stuff)
   const simpleUniforms = [
     'paintStyle', 'paintRoughness', 'wearAmount', 'patternScale',
-    'patternRotation', 'colorAdjustment', 'metalness', 'roughness', 'debugMode'
+    'patternRotation', 'colorAdjustment', 'colorBrightness', 'metalness',
+    'roughness', 'debugMode', 'wearSoftness', 'pearlescentScale',
+    'wearRemapMin', 'wearRemapMax'
   ];
 
   simpleUniforms.forEach(key => {
@@ -650,6 +554,31 @@ export function updateCSSkinShaderUniforms(
       }
     });
   }
+
+  // Update vector4 uniforms
+  const vector4Uniforms: Array<keyof Pick<CSSkinShaderUniforms, 'paintDurability' | 'paintMetalnessValues' | 'paintRoughnessValues'>> = [
+    'paintDurability',
+    'paintMetalnessValues',
+    'paintRoughnessValues'
+  ];
+
+  vector4Uniforms.forEach(key => {
+    if (updates[key] && material.uniforms[key]) {
+      material.uniforms[key].value.copy(updates[key] as THREE.Vector4);
+    }
+  });
+
+  // Update vector3 uniforms
+  const vector3Uniforms: Array<keyof Pick<CSSkinShaderUniforms, 'paintAlbedoLevels' | 'metallicPaintAlbedoLevels'>> = [
+    'paintAlbedoLevels',
+    'metallicPaintAlbedoLevels'
+  ];
+
+  vector3Uniforms.forEach(key => {
+    if (updates[key] && material.uniforms[key]) {
+      material.uniforms[key].value.copy(updates[key] as THREE.Vector3);
+    }
+  });
 
   // Update vector uniforms (the fancy 2D/3D stuff)
   if (updates.patternOffset && material.uniforms.patternOffset) {
