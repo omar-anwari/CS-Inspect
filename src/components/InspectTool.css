@@ -536,8 +536,8 @@
 
 .stickers-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--space-lg);
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-md);
 }
 
 /* Mobile styles for stickers grid */
@@ -751,8 +751,8 @@
 }
 
 .keychain-image {
-  width: 72px;
-  height: 72px;
+  width: 96px;
+  height: 96px;
   object-fit: contain;
   margin-bottom: var(--space-md);
   filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
@@ -764,35 +764,34 @@
   transform: scale(1.05);
 }
 
-.keychain-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+/* Mobile styles for keychain image */
+@media (max-width: 480px) {
+  .keychain-item .keychain-image {
+    width: 72px;
+    height: 72px;
+  }
+}
+
+.keychain-image-container {
   width: 100%;
-}
-
-.keychain-name {
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  color: var(--color-text-primary);
-  font-weight: 600;
-  margin-bottom: var(--space-sm);
-  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.keychain-pattern {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  padding: var(--space-xs) var(--space-sm);
-  background: rgba(0, 0, 0, 0.2);
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  overflow: hidden;
+  position: relative;
+}
+
+.keychain-image-container img {
+  width: 90%;
+  height: 90%;
+  object-fit: contain;
+  transition: transform 0.3s ease;
+}
+
+.keychain-item:hover .keychain-image-container img {
+  transform: scale(1.05);
 }
 
 .background-selector {
