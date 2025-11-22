@@ -126,6 +126,7 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     dualberettascolony: 'so_space_marine', //check if the name is correct
     dualberettasoilchange: 'sp_engine_dirty', //broken
     dualberettascontractor: 'so_pmc', //check if the name is correct
+    dualberettasangeleyes: 'dual_elite_biblical_angel',
 
     // Five-SeveN
     fivesevenhyperbeast: 'cu_fiveseven_hyperbeast',

@@ -296,40 +296,27 @@ const WeaponModel: React.FC<{
         if (!foundFile) {
           console.log("VMAT not found, searching VCOMPMAT files...");
 
-          // Fetch the directory listing from the public folder
-          let vcompmatFolders: string[] = [];
-          
-          try {
-            // Try to fetch a manifest file that lists all available folders
-            const manifestResponse = await fetch('/materials/_PreviewMaterials/materials/weapons/paints/folders.json');
-            if (manifestResponse.ok) {
-              const manifest = await manifestResponse.json();
-              vcompmatFolders = manifest.folders || [];
-              console.log(`Loaded ${vcompmatFolders.length} folders from manifest`);
-            }
-          } catch (error) {
-            console.log("No manifest found, using fallback folder list");
-          }
+          // Common VCOMPMAT subfolders based on your screenshot
+          const vcompmatFolders = [
+            'items',
+            'assets',
+            'paintkits',
+            'community',
+            'legacy',
+            'limited_time',
+            'set_graphic_design',
+            'set_overpass_2024',
+            'set_realism_camo',
+            'set_train_2025',
+            'timed_drops',
+            'workshop',
+            'community/community_33',
+            'community/community_34',
+            'community/community_35',
+            'community/community_36'
+          ];
 
-          // If no manifest, fall back to known folders
-          if (vcompmatFolders.length === 0) {
-            vcompmatFolders = [
-              'items',
-              'assets',
-              'paintkits',
-              'community',
-              'community/community_33',
-              'community/community_34',
-              'community/community_35',
-              'limited_time',
-              'set_graphic_design',
-              'set_overpass_2024',
-              'set_realism_camo',
-              'set_train_2025',
-              'timed_drops',
-              'workshop'
-            ];
-          }
+
 
           for (const folder of vcompmatFolders) {
             const vcompmatPath = `/materials/_PreviewMaterials/materials/weapons/paints/${folder}/${patternName}.vcompmat`;
@@ -422,7 +409,7 @@ const WeaponModel: React.FC<{
           mask: materialData.maskPath,
           wear: materialData.wearPath
         };
-        
+
         // Remove undefined values and cast to Record<string, string>
         const textures: Record<string, string> = Object.fromEntries(
           Object.entries(texturesRaw).filter(([_, v]) => typeof v === 'string' && v !== undefined)
@@ -454,11 +441,11 @@ const WeaponModel: React.FC<{
                 // Ensure the material preserves proper rendering properties
                 if (child.material instanceof THREE.MeshStandardMaterial) {
                   const material = child.material;
-                  
+
                   // Ensure material responds to lighting
                   material.needsUpdate = true;
                   material.flatShading = false; // Ensure smooth shading
-                  
+
                   // Set proper metalness and roughness if not already set by textures
                   if (!material.metalnessMap) {
                     material.metalness = materialData.parameters?.metalness ?? originalMetalness ?? 0.7;
@@ -466,32 +453,32 @@ const WeaponModel: React.FC<{
                   if (!material.roughnessMap) {
                     material.roughness = materialData.parameters?.roughness ?? originalRoughness ?? 0.5;
                   }
-                  
+
                   // Ensure normal map is properly configured
                   if (material.normalMap) {
                     material.normalScale.set(0.5, 0.5); // Reduced from 1.5 to minimize artifacts
                     material.normalMapType = THREE.TangentSpaceNormalMap;
                   }
-                  
+
                   // Ensure AO map is properly applied
                   if (material.aoMap) {
                     material.aoMapIntensity = 0.6; // Reduced from 1.0
                   }
-                  
+
                   // Reduced environment map intensity
                   material.envMapIntensity = 0.6; // Reduced from 1.0
-                  
+
                   // Ensure vertex colors don't interfere
                   material.vertexColors = false;
-                  
+
                   // Make sure the material is visible and not transparent unless needed
                   material.visible = true;
                   material.transparent = materialData.parameters?.transparent ?? false;
                   material.opacity = materialData.parameters?.opacity ?? 1.0;
-                  
+
                   // Set proper side rendering
                   material.side = THREE.FrontSide;
-                  
+
                   // Ensure the material updates
                   material.needsUpdate = true;
                 }
@@ -500,7 +487,7 @@ const WeaponModel: React.FC<{
                 if (child.geometry && !child.geometry.attributes.normal) {
                   child.geometry.computeVertexNormals();
                 }
-                
+
                 // Recompute tangents if we have normal maps
                 if (child.material instanceof THREE.MeshStandardMaterial && child.material.normalMap) {
                   if (child.geometry.hasAttribute('uv') && child.geometry.hasAttribute('normal')) {
@@ -760,40 +747,35 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
     <div ref={containerRef} style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
       <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
         <CameraControlsManager />
-        {/* Enhanced Studio Lighting Setup for better material visibility */}
-        
-        {/* Improved lighting setup to reduce shine artifacts */}
-        
-        {/* Main directional light - reduced intensity */}
+        {/* CS2-inspired warm lighting */}
         <directionalLight
-          position={[5, 5, 5]}
-          intensity={1.2}
-          color={0xffffff}
+          position={[4, 7, 3]}
+          intensity={1.35}
+          color={0xffe3b0}
           castShadow
         />
 
-        {/* Fill light */}
+        {/* Cooler back fill to keep contrast while key stays warm */}
         <directionalLight
-          position={[-5, 3, -3]}
-          intensity={0.8}
-          color={0xffffff}
+          position={[-6, 3, -2]}
+          intensity={0.75}
+          color={0xdde7ff}
         />
 
-        {/* Softer ambient light */}
-        <ambientLight intensity={0.6} />
+        {/* Warm ambient bounce similar to CS2 showroom feel */}
+        <ambientLight color={0xffe7d6} intensity={0.35} />
 
-        {/* Reduced hemisphere light */}
         <hemisphereLight
-          color={0xffffff}
-          groundColor={0x444444}
-          intensity={0.4}
+          color={0xffe0bd}
+          groundColor={0x2f2f2f}
+          intensity={0.55}
         />
 
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
           <ErrorBoundary fallback={<Box args={[1, 1, 1]} material={new THREE.MeshNormalMaterial()} />}>
             {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} modelScale={modelScale} onModelLoaded={() => setModelLoaded(true)} />}
-            {/* Use a neutral HDRI for subtle reflections, not a forest */}
-            <Environment preset="studio" background={false} />
+            {/* Warm HDRI for subtle reflections */}
+            <Environment preset="sunset" background={false} blur={0.2} />
             <fog attach="fog" args={['#000000', 10, 50]} />
           </ErrorBoundary>
         </Suspense>
