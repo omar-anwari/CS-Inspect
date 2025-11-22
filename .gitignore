@@ -36,3 +36,5 @@ public/models/**/*
 !public/models/
 !public/models/**/
 !public/models/**/.gitkeep
+src/CS/csgo_customweapon_vulkan_50_features.txt
+src/CS/Technical Overview.txt
