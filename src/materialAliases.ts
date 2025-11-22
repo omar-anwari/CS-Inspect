@@ -238,6 +238,7 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     p2000chainmail: 'am_chainmail', //broken
     p2000pulse: 'cu_p2000_pulse',
     p2000royalbaroque: 'spe_scarf_print', //broken
+    p2000redwing: 'p2000_deep_red',
     p2000redfragcam: 'hy_poly_camo', //broken
     p2000imperial: 'am_p2000_imperial_red', //broken
     p2000oceanic: 'hy_p2000_oceani', //intentional spelling mistake and broken

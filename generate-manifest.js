@@ -1,200 +1,56 @@
-// const fs = require('fs');
-// const path = require('path');
-
-// const modelsDir = path.join(__dirname, 'public', 'models');
-// const manifest = {
-//   models: []
-// };
-
-// function walk(dir) {
-//   const files = fs.readdirSync(dir);
-//   for (const file of files) {
-//     const filePath = path.join(dir, file);
-//     if (fs.statSync(filePath).isDirectory()) {
-//       walk(filePath);
-//     } else if (file.match(/\.(gltf|glb)$/)) {
-//       manifest.models.push(path.relative(modelsDir, filePath).replace(/\\/g, '/'));
-//     }
-//   }
-// }
-
-// walk(modelsDir);
-// fs.writeFileSync(path.join(modelsDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-
-// const fs = require('fs');
-// const path = require('path');
-
-// const publicDir = path.join(__dirname, 'public');
-// const modelsBaseDir = path.join(publicDir, 'models');
-// const materialsDir = path.join(publicDir, 'materials');
-
-// const manifest = {
-// 	models: [],
-// 	legacyModels: [],
-// 	materials: [],
-// };
-
-// function processAssets() {
-// 	// Process regular models (excluding _Legacy)
-// 	const mainModelsDir = path.join(modelsBaseDir, 'weapons', 'models');
-// 	if (fs.existsSync(mainModelsDir)) {
-// 		processModelDirectory(mainModelsDir, false);
-// 	}
-
-// 	// Process legacy models
-// 	const legacyDir = path.join(mainModelsDir, '_Legacy');
-// 	if (fs.existsSync(legacyDir)) {
-// 		processModelDirectory(legacyDir, true);
-// 	}
-
-// 	// Process materials
-// 	processMaterialsDirectory();
-// }
-
-// function processModelDirectory(dir, isLegacy) {
-// 	const files = fs.readdirSync(dir);
-// 	for (const file of files) {
-// 		const filePath = path.join(dir, file);
-// 		const stat = fs.statSync(filePath);
-
-// 		if (stat.isDirectory()) {
-// 			// Skip _Legacy directory when processing regular models
-// 			if (!isLegacy && file === '_Legacy') continue;
-// 			processModelDirectory(filePath, isLegacy);
-// 		} else if (file.match(/\.(gltf|glb)$/)) {
-// 			const relativePath = path
-// 				.relative(modelsBaseDir, filePath)
-// 				.replace(/\\/g, '/');
-
-// 			if (isLegacy) {
-// 				manifest.legacyModels.push(relativePath);
-// 			} else {
-// 				manifest.models.push(relativePath);
-// 			}
-// 		}
-// 	}
-// }
-
-// function processMaterialsDirectory() {
-// 	const walk = (dir) => {
-// 		const files = fs.readdirSync(dir);
-// 		for (const file of files) {
-// 			const filePath = path.join(dir, file);
-// 			const stat = fs.statSync(filePath);
-
-// 			if (stat.isDirectory()) {
-// 				walk(filePath);
-// 			} else if (file.match(/\.(png)$/i)) {
-// 				const relativePath = path
-// 					.relative(materialsDir, filePath)
-// 					.replace(/\\/g, '/');
-// 				manifest.materials.push(relativePath);
-// 			}
-// 		}
-// 	};
-
-// 	if (fs.existsSync(materialsDir)) {
-// 		walk(materialsDir);
-// 	}
-// }
-
-// processAssets();
-
-// // Write manifest
-// fs.writeFileSync(
-// 	path.join(modelsBaseDir, 'manifest.json'),
-// 	JSON.stringify(manifest, null, 2)
-// );
-
-// console.log('Manifest generated:');
-// console.log(`- Regular models: ${manifest.models.length}`);
-// console.log(`- Legacy models: ${manifest.legacyModels.length}`);
-// console.log(`- Materials: ${manifest.materials.length}`);
-
 const fs = require('fs');
 const path = require('path');
 
-const publicDir = path.join(__dirname, 'public');
-const modelsBaseDir = path.join(publicDir, 'models');
-const materialsDir = path.join(publicDir, 'materials');
+const baseDir = path.join(__dirname, '/public/materials/_PreviewMaterials/materials');
+const outputFile = path.join(baseDir, 'folders.json');
 
-const manifest = {
-	models: [],
-	legacyModels: [],
-	materials: [],
-};
-
-function processAssets() {
-	// Model processing
-	const mainModelsDir = path.join(modelsBaseDir, 'weapons', 'models');
-	if (fs.existsSync(mainModelsDir)) {
-		processModelDirectory(mainModelsDir, false);
-	}
-
-	const legacyDir = path.join(mainModelsDir, '_Legacy');
-	if (fs.existsSync(legacyDir)) {
-		processModelDirectory(legacyDir, true);
-	}
-
-	// Materials processing
-	processMaterialsDirectory();
+function getAllSubfolders(dir, relativePath = '') {
+  const folders = [];
+  
+  try {
+    const items = fs.readdirSync(dir, { withFileTypes: true });
+    
+    for (const item of items) {
+      if (item.isDirectory()) {
+        const folderPath = relativePath ? `${relativePath}/${item.name}` : item.name;
+        folders.push(folderPath);
+        
+        // Recursively get subfolders
+        const fullPath = path.join(dir, item.name);
+        const subfolders = getAllSubfolders(fullPath, folderPath);
+        folders.push(...subfolders);
+      }
+    }
+  } catch (error) {
+    console.error(`Error reading directory ${dir}:`, error.message);
+  }
+  
+  return folders;
 }
 
-function processMaterialsDirectory() {
-	const walk = (dir) => {
-		const files = fs.readdirSync(dir);
-		for (const file of files) {
-			const filePath = path.join(dir, file);
-			const stat = fs.statSync(filePath);
-
-			if (stat.isDirectory()) {
-				walk(filePath);
-			} else if (file.match(/\.(png|jpg|jpeg)$/i)) {
-				const relativePath = path
-					.relative(materialsDir, filePath)
-					.replace(/\\/g, '/') // Convert to UNIX paths
-					.toLowerCase(); // Normalize to lowercase
-
-				if (!manifest.materials.includes(relativePath)) {
-					manifest.materials.push(relativePath);
-				}
-			}
-		}
-	};
-
-	if (fs.existsSync(materialsDir)) {
-		walk(materialsDir);
-	}
+function generateManifest() {
+  console.log('Scanning directory:', baseDir);
+  
+  if (!fs.existsSync(baseDir)) {
+    console.error('Directory does not exist:', baseDir);
+    console.error('Please ensure the materials folder is in the correct location');
+    process.exit(1);
+  }
+  
+  const folders = getAllSubfolders(baseDir);
+  
+  const manifest = {
+    generated: new Date().toISOString(),
+    basePath: '/materials/_PreviewMaterials/materials/weapons/paints',
+    count: folders.length,
+    folders: folders.sort()
+  };
+  
+  fs.writeFileSync(outputFile, JSON.stringify(manifest, null, 2));
+  console.log(`✅ Generated manifest with ${folders.length} folders`);
+  console.log(`📁 Output: ${outputFile}`);
+  console.log('\nFirst 10 folders:');
+  folders.slice(0, 10).forEach(f => console.log(`  - ${f}`));
 }
 
-function processModelDirectory(dir, isLegacy) {
-	const files = fs.readdirSync(dir);
-	for (const file of files) {
-		const filePath = path.join(dir, file);
-		const stat = fs.statSync(filePath);
-
-		if (stat.isDirectory()) {
-			processModelDirectory(filePath, isLegacy);
-		} else if (file.match(/\.(gltf|glb)$/)) {
-			const relativePath = path
-				.relative(modelsBaseDir, filePath)
-				.replace(/\\/g, '/');
-
-			if (isLegacy) {
-				manifest.legacyModels.push(relativePath);
-			} else {
-				manifest.models.push(relativePath);
-			}
-		}
-	}
-}
-
-processAssets();
-
-// Write manifest
-fs.writeFileSync(
-	path.join(modelsBaseDir, 'manifest.json'),
-	JSON.stringify(manifest, null, 2)
-);
-
-console.log('Manifest generated successfully!');
+generateManifest();

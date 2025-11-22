@@ -323,7 +323,7 @@ export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspe
     if (itemData) {
       if (SHOW_WELCOME_FOR_EVERYONE) {
         // Show for everyone
-        setShowWelcome(true);
+        setShowWelcome(false);
       } else if (isFirstVisit) {
         // Show only for first-time visitors
         setShowWelcome(true);
@@ -668,7 +668,7 @@ export const InspectTool: React.FC<InspectToolProps> = ({ inspectLink: propInspe
           {/* Keychains section */}
           {itemData.keychains && itemData.keychains.length > 0 && (
             <div className="keychains-container">
-              <h3>Attached Keychains</h3>
+              <h3>Attached Charm</h3>
               <div className="keychains-grid">
                 {itemData.keychains.map((keychain, index) => (
                   <div key={index} className="keychain-item">

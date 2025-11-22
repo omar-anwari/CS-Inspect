@@ -296,23 +296,40 @@ const WeaponModel: React.FC<{
         if (!foundFile) {
           console.log("VMAT not found, searching VCOMPMAT files...");
 
-          // Common VCOMPMAT subfolders based on your screenshot
-          const vcompmatFolders = [
-            'items',
-            'assets',
-            'paintkits',
-            'community',
-            'community/community_33',
-            'community/community_34',
-            'community/community_35',
-            'limited_time',
-            'set_graphic_design',
-            'set_overpass_2024',
-            'set_realism_camo',
-            'set_train_2025',
-            'timed_drops',
-            'workshop'
-          ];
+          // Fetch the directory listing from the public folder
+          let vcompmatFolders: string[] = [];
+          
+          try {
+            // Try to fetch a manifest file that lists all available folders
+            const manifestResponse = await fetch('/materials/_PreviewMaterials/materials/weapons/paints/folders.json');
+            if (manifestResponse.ok) {
+              const manifest = await manifestResponse.json();
+              vcompmatFolders = manifest.folders || [];
+              console.log(`Loaded ${vcompmatFolders.length} folders from manifest`);
+            }
+          } catch (error) {
+            console.log("No manifest found, using fallback folder list");
+          }
+
+          // If no manifest, fall back to known folders
+          if (vcompmatFolders.length === 0) {
+            vcompmatFolders = [
+              'items',
+              'assets',
+              'paintkits',
+              'community',
+              'community/community_33',
+              'community/community_34',
+              'community/community_35',
+              'limited_time',
+              'set_graphic_design',
+              'set_overpass_2024',
+              'set_realism_camo',
+              'set_train_2025',
+              'timed_drops',
+              'workshop'
+            ];
+          }
 
           for (const folder of vcompmatFolders) {
             const vcompmatPath = `/materials/_PreviewMaterials/materials/weapons/paints/${folder}/${patternName}.vcompmat`;
