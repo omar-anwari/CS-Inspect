@@ -1,3 +1,5 @@
+import { InferencePriority } from "typescript";
+
 /**
  * Maps the normalized skin names (lowercase, no spaces) to their corresponding VMAT pattern name.
  * The key is what will be extracted from the skin name (e.g., "pole position" -> "poleposition").
@@ -220,6 +222,8 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     glock18redtire: 'sp_tire_tread_red', //broken
     glock18oceantopo: 'hye_topo', //broken
     glock18highbeam: 'aa_vertigo_blue', //broken
+    glock18mirrormosaic: 'glock_mirror_maze_v2_pearl',
+    glock18gammadoppler: 'am_gamma_doppler_phase1_glock', //fix for multiple phases
 
     // P2000
     p2000fireelemental: 'cu_p2000_fire_elemental',
@@ -252,6 +256,61 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     p2000pathfinder: 'sp_labyrinth2', //broken
     p2000coachclass: 'cu_luggage_p2000',
 
+    // P250
+    p250seeyalater :'cu_p250_cybercroc',
+    p250asiimov: 'cu_p250_asiimov',
+    p250visions: 'gs_p250_visions',
+    p250muertos: 'cu_p250_mandala',
+    p250epicenter: 'p250_impact',
+    p250franklin: 'cu_money',
+    p250apepscurse: 'gs_p250_apep',
+    p250undertow: 'am_p250_beaded_paint', //broken
+    p250cartel: 'aq_p250_cartel',
+    p250mehndi: 'cu_p250_refined',
+    p250wingshot: 'hy_p250_crackshot', //broken
+    p250nevermore: 'aa_p250_gravediggers', //broken
+    p250vinoprimo: 'gs_p250_checker',
+    p250supernova: 'cu_bittersweet', //half broken - need to figure out patterns
+    p250redrock: 'cu_p250_axiom',
+    p250xray: 'cu_xray_p250',
+    p250cybershell: 'gs_p250_cybershell',
+    p250inferno: 'gs_p250_inferno',
+    p250splash: 'sp_splash_p250', //broken
+    p250nuclearthreat: 'sp_nukestripe_green', //broken
+    p250digitalarchitect: 'aa_vertigogeo_neon', //broken
+    p250redtide: 'hye_pink_coral', //broken
+    p250smallgame: 'soch_hunter_blaze_p250', //broken
+    p250bullfrog: 'p250_bullfrog',
+    p250cassette: '',
+    p250whiteout: '',
+    p250valence: '',
+    p250rebuilt: '',
+    p250exchanger: '',
+    p250verdigris: '',
+    p250bengaltiger: '',
+    p250steeldisruption: '',
+    p250ironclad: '',
+    p250ripple: '',
+    p250containment: '',
+    p250modernhunter: '',
+    p250hive: '',
+    p250blacktan: '',
+    p250crimsonkimono: '',
+    p250constructivist: '',
+    p250sedimentary: '',
+    p250contamination: '',
+    p250metallicddpat: '',
+    p250gunsmoke: '',
+    p250darkfiligree: '',
+    p250facets: '',
+    p250mintkimono: '',
+    p250facilitydraft: '',
+    p250bonemask: '',
+    p250forestnight: '',
+    p250copperoxide: '',
+    p250plumnetting: '',
+    p250borealforest: '',
+    p250drought: '',
     // TEST
     // awpduality: 'gs_awp_limbo_snake',
     // m4a4inlivingcolor: 'cu_m4a4_love'
