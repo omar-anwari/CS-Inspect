@@ -128,17 +128,15 @@ const WeaponModel: React.FC<{
         return response.text();
       })
       .then(text => {
-        try {
-          // Attempt to parse as JSON to catch format errors early
-          JSON.parse(text);
-          console.log("Model file validated successfully as JSON");
-          if (onModelLoaded) onModelLoaded();
-        } catch (err) {
-          const error = err as Error;
-          console.error("Model file is not valid JSON:", error);
-          setHasError(true);
-          setErrorMessage(`Invalid model file format: ${error.message}`);
+        // Basic HTML guard so we don't try to load error pages as models
+        const lowered = text.trim().toLowerCase();
+        if (lowered.startsWith('<!doctype') || lowered.startsWith('<html')) {
+          throw new Error('Received HTML instead of model data');
         }
+
+        // For GLB/binary GLTF, JSON.parse would fail; we simply trust non-HTML responses here
+        console.log("Model file validated (non-HTML response)");
+        if (onModelLoaded) onModelLoaded();
       })
       .catch(err => {
         const error = err as Error;
@@ -155,7 +153,7 @@ const WeaponModel: React.FC<{
   useEffect(() => {
     const loadMaterials = async () => {
       try {
-        if (!scene || !itemData?.paintindex) { // Changed from paint_index to paintindex
+        if (!scene || !itemData?.paintindex) {
           console.log('[MaterialLoader] No scene or paint index available');
           return;
         }
@@ -163,71 +161,104 @@ const WeaponModel: React.FC<{
         console.log('[MaterialLoader] Starting material loading process');
         console.log('[MaterialLoader] Item data:', itemData);
 
-        // Get the paint kit data to find the pattern name
-        const paintIndex = itemData.paintindex;
-        const patternName = await getPaintKitPatternName(paintIndex);
-        const fallbackId = paintIndex.toString();
-        console.log(`[MaterialLoader] Using items_game pattern for paint kit ${fallbackId}: ${patternName || fallbackId}`);
+        // Get the base weapon name to determine if we need legacy model
+        const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
+        const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
+        console.log('[MaterialLoader] Using legacy model:', useLegacyModel);
 
-        const basePath = '/materials/_PreviewMaterials/materials/models/weapons/customization/paints';
-        const searchNames = patternName ? [patternName, fallbackId] : [fallbackId];
-
-        const vmatPaths = searchNames.flatMap((name) => [
-          `${basePath}/vmats/${name}.vmat`,
-          `${basePath}/custom_paints/vmats/${name}.vmat`
-        ]);
-
-        console.log('[MaterialLoader] Attempting to load VMAT from these paths:', vmatPaths);
-
-        let foundFile = false;
-        let vmatText = '';
-
-        // Try each path until we find one that works
-        for (const vmatPath of vmatPaths) {
-          try {
-            console.log(`[MaterialLoader] Trying VMAT path: ${vmatPath}`);
-            const vmatResponse = await fetch(vmatPath);
-
-            if (vmatResponse.ok) {
-              const contentType = vmatResponse.headers.get('content-type');
-              vmatText = await vmatResponse.text();
-
-              // Validate it's not an HTML error page
-              if (contentType && contentType.includes('text/html')) {
-                console.log(`[MaterialLoader] Path ${vmatPath} returned HTML (404 page), skipping`);
-                continue;
-              }
-
-              if (vmatText.trim().startsWith('<!DOCTYPE') || vmatText.trim().startsWith('<html')) {
-                console.log(`[MaterialLoader] Path ${vmatPath} contains HTML content, skipping`);
-                continue;
-              }
-
-              // If we got valid VMAT content, use it
-              console.log(`[MaterialLoader] ✅ Successfully loaded VMAT from ${vmatPath}`);
-              foundFile = true;
-              break;
-            } else {
-              console.log(`[MaterialLoader] Path ${vmatPath} returned ${vmatResponse.status}, trying next path`);
-            }
-          } catch (error) {
-            console.log(`[MaterialLoader] Error loading ${vmatPath}:`, error);
-          }
-        }
-
-        if (!foundFile) {
-          console.warn(`[MaterialLoader] ❌ Could not find VMAT file for paint kit ${paintIndex} (${patternName})`);
-          console.warn('[MaterialLoader] Tried paths:', vmatPaths);
+        // Get the actual pattern name from items_game.txt
+        const patternName = await getPaintKitPatternName(itemData.paintindex);
+        
+        if (!patternName) {
+          console.error('[MaterialLoader] Could not find pattern name for paint index:', itemData.paintindex);
+          applyGrayMaterial();
+          setIsLoaded(true);
           return;
         }
 
-        // Parse the VMAT file to extract texture paths
-        console.log('[MaterialLoader] Parsing VMAT file content');
-        const materialData = await parseVMAT(vmatText);
-        console.log('[MaterialLoader] Parsed material data:', materialData);
+        console.log(`[MaterialLoader] Using pattern name for paint kit ${itemData.paintindex}: ${patternName}`);
+        
+        // Parallelize material file loads - fire all attempts simultaneously
+        const loadMaterialData = async (): Promise<VMATData | null> => {
+          // Use the pattern name, not the paint index
+          const vmatPath = `/materials/_PreviewMaterials/materials/models/weapons/customization/paints/vmats/${patternName}.vmat`;
+          // All folders/subfolders under public/materials/_PreviewMaterials/materials/weapons/paints
+          const vcompmatFolders = [
+            '', // top-level under paints
+            'community',
+            'community/community_33',
+            'community/community_34',
+            'community/community_35',
+            'community/community_36',
+            'legacy',
+            'limited_time',
+            'set_graphic_design',
+            'set_overpass_2024',
+            'set_realism_camo',
+            'set_train_2025',
+            'timed_drops',
+            'workshop'
+          ];
 
-        // Extract and apply textures - FIXED ARGUMENT ORDER
-        await applyMaterialToScene(materialData, patternName || fallbackId, false);
+          // Create all fetch promises at once
+          const attempts: Promise<{ type: string; data: VMATData } | null>[] = [];
+
+          // VMAT attempt
+          attempts.push(
+            fetch(vmatPath, { headers: { 'Accept': 'application/octet-stream, text/plain, */*' } })
+              .then(async (res) => {
+                if (!res.ok) return null;
+                const ct = res.headers.get('content-type') || '';
+                const text = await res.text();
+                if (ct.includes('text/html') || text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+                  return null;
+                }
+                const data = await parseVMAT(vmatPath);
+                console.log(`✅ Found VMAT: ${patternName}.vmat`);
+                return { type: 'vmat', data };
+              })
+              .catch(() => null)
+          );
+
+          // VCOMPMAT attempts
+          for (const folder of vcompmatFolders) {
+            const url = `/materials/_PreviewMaterials/materials/weapons/paints/${folder}/${patternName}.vcompmat`;
+            attempts.push(
+              fetch(url, { headers: { 'Accept': 'application/octet-stream, text/plain, */*' } })
+                .then(async (res) => {
+                  if (!res.ok) return null;
+                  const text = await res.text();
+                  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+                    return null;
+                  }
+                  const data = await parseVCOMPMAT(text);
+                  console.log(`✅ Found VCOMPMAT: ${folder}/${patternName}.vcompmat`);
+                  return { type: 'vcompmat', data };
+                })
+                .catch(() => null)
+            );
+          }
+
+          // Wait for all attempts and return first success
+          const results = await Promise.allSettled(attempts);
+          for (const result of results) {
+            if (result.status === 'fulfilled' && result.value) {
+              return result.value.data;
+            }
+          }
+          return null;
+        };
+
+        const loadedMaterialData = await loadMaterialData();
+        if (!loadedMaterialData) {
+          console.log(`No material files found for pattern ${patternName}, using gray material`);
+          applyGrayMaterial();
+          setIsLoaded(true);
+          return;
+        }
+
+        // Apply the loaded material data to the scene
+        await applyMaterialToScene(loadedMaterialData, patternName, useLegacyModel);
 
       } catch (error) {
         console.error('[MaterialLoader] Error in loadMaterials:', error);

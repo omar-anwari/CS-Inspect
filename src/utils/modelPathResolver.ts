@@ -56,9 +56,9 @@ export const resolveModelPath = (weaponName: string, isLegacy: boolean = false):
     return '';
   }
   
-  // Extract the base name without the "weapon_" prefix and type
-  // For example: "weapon_rif_ak47" -> "ak47"
-  const weaponBaseName = modelFileName.split('_').pop() || '';
+  // Extract the base folder name after the weapon type Example: "weapon_rif_m4a1_silencer" -> "m4a1_silencer"
+  const baseMatch = modelFileName.match(/^weapon_[a-z]+_(.+)$/);
+  const weaponBaseName = baseMatch ? baseMatch[1] : modelFileName.replace(/^weapon_/, '');
   
   // Base path for models
   const basePath = '/models/weapons/models';

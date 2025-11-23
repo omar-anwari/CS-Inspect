@@ -163,7 +163,10 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
             data.items[currentItem] = { name: '' };
           } else if (inPaintKits) {
             currentPaintKit = id;
-            data.paintKits[currentPaintKit] = { name: '' };
+            data.paintKits[currentPaintKit] = { 
+              id: parseInt(id),
+              name: ''
+            };
           }
         }
         continue;
@@ -194,17 +197,19 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
 
         if (inItems && currentItem) {
           // Store item properties
-          data.items[currentItem][key as keyof ItemData] = value as any;
+          data.items[currentItem][key as keyof ItemData] = value;
         } else if (inPaintKits && currentPaintKit) {
           // Store paint kit properties
-          data.paintKits[currentPaintKit][key as keyof PaintKitData] = value as any;
+          if (key === 'name') {
+            // This is the pattern name like "cu_deag_printstream"
+            data.paintKits[currentPaintKit].name = value;
+            data.paintKits[currentPaintKit].pattern_name = value;
+          } else if (key === 'wear_remap_min' || key === 'wear_remap_max') {
+            data.paintKits[currentPaintKit][key] = parseFloat(value) || 0;
+          } else {
+            (data.paintKits[currentPaintKit] as any)[key] = value;
+          }
 
-          if (key === "wear_remap_min") {
-            data.paintKits[currentPaintKit].wear_remap_min = value;
-          }
-          if (key === "wear_remap_max") {
-            data.paintKits[currentPaintKit].wear_remap_max = value;
-          }
           if (key === "style") {
             data.paintKits[currentPaintKit].style = value;
           }
@@ -444,6 +449,7 @@ export const getSkinInfo = async (weaponName: string, paintIndex: number): Promi
       if (knownLegacyModels[paintKitKey] || knownLegacyModels[`${weaponName}_${paintIndex}`]) {
         console.warn(`Creating fallback skin info for ${weaponName} with paint index ${paintIndex} (known legacy model)`);
         return {
+          id: paintIndex, // Fix: Add required id field
           name: `${weaponName}_${paintIndex}`,
           description_tag: `#PaintKit_${weaponName}_${paintIndex}_Tag`,
         };
@@ -452,6 +458,7 @@ export const getSkinInfo = async (weaponName: string, paintIndex: number): Promi
       // Even if not found in cache, provide minimal data to avoid null returns
       console.warn(`Creating minimal fallback data for ${weaponName} with paint index ${paintIndex}`);
       return {
+        id: paintIndex, // Fix: Add required id field
         name: `${weaponName}_${paintIndex}`,
         description_tag: `#PaintKit_${weaponName}_${paintIndex}_Tag`
       };
@@ -503,8 +510,8 @@ export const getPaintKitByIndex = async (paintIndex: number): Promise<PaintKitDa
         id: Number(paintKitKey),
         name: nameMatch ? nameMatch[1] : `${paintKitKey}`,
         pattern_name: nameMatch ? nameMatch[1] : undefined,
-        wear_remap_min: wearMinMatch ? wearMinMatch[1] : undefined,
-        wear_remap_max: wearMaxMatch ? wearMaxMatch[1] : undefined
+        wear_remap_min: wearMinMatch ? parseFloat(wearMinMatch[1]) : undefined, // Fix: Parse as number
+        wear_remap_max: wearMaxMatch ? parseFloat(wearMaxMatch[1]) : undefined  // Fix: Parse as number
       };
 
       // Cache it into parsed data for future lookups
@@ -782,6 +789,89 @@ export const deepSearchPaintKit = async (paintKitId: string): Promise<boolean> =
  * Helper so callers don’t re-parse:
  */
 export const getPaintKitPatternName = async (paintIndex: number): Promise<string | null> => {
-  const kit = await getPaintKitByIndex(paintIndex);
-  return kit?.pattern_name || kit?.name || null;
+  // Treat only names with letters/underscores (no spaces) as valid patterns
+  const isPatternLikeName = (name: string) => {
+    if (!name) return false;
+    const hasLettersOrUnderscore = /[a-zA-Z_]/.test(name);
+    const hasSpaces = /\s/.test(name);
+    return hasLettersOrUnderscore && !hasSpaces;
+  };
+  const paintKitKey = paintIndex.toString();
+
+  // First try to get from parsed data
+  const data = await parseItemsGame();
+  const paintKit = data.paintKits[paintKitKey];
+  
+  if (paintKit && paintKit.name && isPatternLikeName(paintKit.name)) {
+    // The name field should contain the actual pattern like "cu_deag_printstream"
+    console.log(`[getPaintKitPatternName] Paint index ${paintIndex} resolved to pattern: ${paintKit.name}`);
+    return paintKit.name;
+  }
+  
+  // If not in parsed data, do a deep search in the raw file
+  console.log(`[getPaintKitPatternName] Paint kit ${paintIndex} not in parsed data, searching raw file...`);
+
+  // Prefer a raw parse that looks for wear_remap flags first (weapon paint kits)
+  const rawPaintKit = await getPaintKitByIndex(paintIndex);
+  if (rawPaintKit?.name) {
+    if (isPatternLikeName(rawPaintKit.name)) {
+      console.log(`[getPaintKitPatternName] Found pattern via wear_remap block: ${rawPaintKit.name}`);
+
+      // Cache for future lookups
+      const cachedPaintKit = {
+        ...rawPaintKit,
+        id: rawPaintKit.id ?? paintIndex,
+        name: rawPaintKit.name,
+        pattern_name: rawPaintKit.pattern_name || rawPaintKit.name
+      };
+      data.paintKits[paintKitKey] = cachedPaintKit;
+      const normalized = rawPaintKit.name.toLowerCase();
+      data.paintKits[normalized] = cachedPaintKit;
+
+      return rawPaintKit.name;
+    } else {
+      console.warn(`[getPaintKitPatternName] Wear_remap block found but name looked invalid: ${rawPaintKit.name}`);
+    }
+  }
+  
+  try {
+    const response = await fetch('/items_game.txt');
+    const text = await response.text();
+    
+    // Search for the paint kit block(s)
+    const paintKitRegex = new RegExp(`"${paintIndex}"\\s*\\{[\\s\\S]*?\\}`, 'g');
+    const matches = [...text.matchAll(paintKitRegex)].map(m => m[0]);
+
+    if (matches.length > 0) {
+      // Prefer the block that looks like a weapon paint kit (has wear_remap/use_legacy flags)
+      const preferredBlock =
+        matches.find(block => block.includes('wear_remap_min') || block.includes('wear_remap_max')) ||
+        matches.find(block => block.includes('use_legacy_model')) ||
+        matches.find(block => /"description_tag"/.test(block)) ||
+        matches.find(block => /"name"\s+"[a-z0-9_]+"/i.test(block)) ||
+        matches[0];
+
+      const nameMatch = preferredBlock.match(/"name"\s+"([^"]+)"/);
+      if (nameMatch && nameMatch[1] && isPatternLikeName(nameMatch[1])) {
+        const patternName = nameMatch[1];
+        console.log(`[getPaintKitPatternName] Found pattern name in raw file (preferred block): ${patternName}`);
+
+        // Cache for future lookups
+        data.paintKits[paintKitKey] = {
+          id: paintIndex,
+          name: patternName,
+          pattern_name: patternName
+        };
+        data.paintKits[patternName.toLowerCase()] = data.paintKits[paintKitKey];
+
+        return patternName;
+      }
+    }
+  } catch (error) {
+    console.error(`[getPaintKitPatternName] Error searching raw file:`, error);
+  }
+  
+  // Last resort - return the paint index as string
+  console.warn(`[getPaintKitPatternName] Could not find pattern name for paint kit ${paintIndex}, using index as fallback`);
+  return paintIndex.toString();
 };
