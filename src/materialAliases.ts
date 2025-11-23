@@ -281,36 +281,37 @@ export const MATERIAL_ALIASES: Record<string, string> = {
     p250redtide: 'hye_pink_coral', //broken
     p250smallgame: 'soch_hunter_blaze_p250', //broken
     p250bullfrog: 'p250_bullfrog',
-    p250cassette: '',
-    p250whiteout: '',
-    p250valence: '',
-    p250rebuilt: '',
-    p250exchanger: '',
-    p250verdigris: '',
-    p250bengaltiger: '',
-    p250steeldisruption: '',
-    p250ironclad: '',
-    p250ripple: '',
-    p250containment: '',
-    p250modernhunter: '',
-    p250hive: '',
-    p250blacktan: '',
-    p250crimsonkimono: '',
-    p250constructivist: '',
-    p250sedimentary: '',
-    p250contamination: '',
-    p250metallicddpat: '',
-    p250gunsmoke: '',
-    p250darkfiligree: '',
-    p250facets: '',
-    p250mintkimono: '',
-    p250facilitydraft: '',
-    p250bonemask: '',
-    p250forestnight: '',
-    p250copperoxide: '',
-    p250plumnetting: '',
-    p250borealforest: '',
-    p250drought: '',
+    p250cassette: 'cu_p250_cassette',
+    p250whiteout: 'so_whiteout',
+    p250valence: 'aq_p250_contour',
+    p250rebuilt: 'cu_p250_rebuilt',
+    p250exchanger: 'hy_ducts_blue', //broken
+    p250verdigris: 'aq_p250_verdigris',
+    p250bengaltiger: 'hy_p250_tiger', //broken
+    p250steeldisruption: 'am_ddpatdense_silver', //broken
+    p250ironclad: 'gs_p250_metal_panels',
+    p250ripple: 'am_p250_sputnik', //broken
+    p250contaminant: 'cu_p250_infect',
+    p250modernhunter: 'hy_hunter_modern',
+    p250hive: 'hy_redhex', //broken
+    p250blacktan: 'hy_desert_multicam', //broken
+    p250crimsonkimono: 'hy_kimono_diamonds_red', //broken
+    p250constructivist: 'brutalist_architecture', //broken
+    p250sedimentary: 'soe_yellow_swirl', //broken
+    p250contamination: 'hy_nuclear_skulls4_p250', //broken
+    p250metallicddpat: 'am_urban', //broken
+    p250gunsmoke: 'hy_gelpen', //broken
+    p250darkfiligree: 'am_ren_dark', //broken
+    p250facets: 'hy_crumple_dark_bravo', //broken
+    p250mintkimono: 'sp_kimono_diamonds', //broken
+    p250sanddune: 'so_sand', //broken
+    p250facilitydraft: 'hy_blueprint_red', //broken
+    p250bonemask: 'sp_tape', //broken
+    p250forestnight: 'hy_forest_night', //broken
+    p250copperoxide: 'so_greyblue_p250', //broken
+    p250plumnetting: 'sp_lace', //broken
+    p250borealforest: 'hy_forest_boreal', //broken
+    p250drought: 'sp_desert_skulls_dawn', //broken
     // TEST
     // awpduality: 'gs_awp_limbo_snake',
     // m4a4inlivingcolor: 'cu_m4a4_love'

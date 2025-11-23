@@ -2,13 +2,13 @@
  * @fileoverview Parser for CS:GO items_game.txt file
  * 
  * This module handles parsing the items_game.txt file to extract information about
- * weapon skins and their properties, focusing on detecting which models should
- * use legacy versions based on the "use_legacy_model" flag.
+ * weapon skins and their properties, focusing on detecting paint kits that
+ * have wear remap data (wear_remap_min / wear_remap_max).
  * 
- * Legacy Model Detection:
- * - Parses items_game.txt and extracts paint kits with use_legacy_model flag
- * - Builds a cache of paint kit IDs that require legacy models
- * - Provides APIs to check if a specific weapon/skin combination needs a legacy model
+ * Wear Remap Detection:
+ * - Parses items_game.txt and extracts paint kits with wear_remap_min/max
+ * - Builds a cache of paint kit IDs that include wear remap information
+ * - Provides APIs to check if a specific weapon/skin combination includes wear remap data
  * 
  * The approach dynamically determines which models should use legacy versions
  * by parsing the actual game data files.
@@ -32,16 +32,17 @@ interface ItemData {
   [key: string]: string | boolean | undefined;
 }
 
-interface PaintKitData {
+export interface PaintKitData {
+  id: number;
   name: string;
+  pattern_name?: string;
   description_tag?: string;
   description_string?: string;
   description?: string;
   pattern?: string;
   vmt_path?: string;
-  use_legacy_model?: string;
-  wear_remap_min?: string;
-  wear_remap_max?: string;
+  wear_remap_min?: number;
+  wear_remap_max?: number;
   style?: string;
 }
 
@@ -107,19 +108,11 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
 
         // Look ahead to log some info about this section
         let isPaintKitForWeapons = false;
-        let useLegacyModelFound = false;
+        let wearRemapFound = false;
 
         // Scan a few lines to log info about this section
         for (let j = i + 2; j < Math.min(i + 50, lines.length); j++) {
           const lookAheadLine = lines[j].trim();
-
-          // Look for the "use_legacy_model" property which is specific to weapon skins
-          if (lookAheadLine === '"use_legacy_model"' || lookAheadLine.includes('"use_legacy_model"')) {
-            useLegacyModelFound = true;
-            isPaintKitForWeapons = true;
-            console.log(`Found use_legacy_model flag at line ${j + 1} - confirmed weapon paint_kits section`);
-            break;
-          }
 
           // Look for standard weapon paint kit patterns
           if ((lookAheadLine === '"9001"' || lookAheadLine === '"0"') &&
@@ -131,15 +124,17 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
           // Patterns commonly found in weapon paint kits sections
           if (lookAheadLine.includes('"pattern"') ||
             lookAheadLine.includes('"wear_default"') ||
-            lookAheadLine.includes('"wear_remap_min"')) {
+            lookAheadLine.includes('"wear_remap_min"') ||
+            lookAheadLine.includes('"wear_remap_max"')) {
+            wearRemapFound = true;
             isPaintKitForWeapons = true;
             break;
           }
         }
 
         // Log info about this section but always process all paint_kits sections
-        if (useLegacyModelFound) {
-          console.log(`Found confirmed weapon paint_kits section with legacy model flags at line ${i + 1}`);
+        if (wearRemapFound) {
+          console.log(`Found wear_remap flag in paint_kits section at line ${i + 1}`);
         } else if (isPaintKitForWeapons) {
           console.log(`Found likely weapon paint_kits section at line ${i + 1}`);
         } else {
@@ -204,14 +199,6 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
           // Store paint kit properties
           data.paintKits[currentPaintKit][key as keyof PaintKitData] = value as any;
 
-          // Log when we find use_legacy_model property for any paint kit
-          if (key === "use_legacy_model") {
-            console.log(`Found use_legacy_model=${value} for paint kit ${currentPaintKit}`);
-
-            // Extract the paint kit name if available for better debugging
-            const paintKitName = data.paintKits[currentPaintKit].name || 'unknown';
-            console.log(`Paint kit ${currentPaintKit} (${paintKitName}) has use_legacy_model=${value}`);
-          }
           if (key === "wear_remap_min") {
             data.paintKits[currentPaintKit].wear_remap_min = value;
           }
@@ -224,6 +211,9 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
 
           // Also track paint kits by name for easier lookup
           if (key === "name" && value) {
+            // Preserve the raw pattern name from items_game
+            data.paintKits[currentPaintKit].pattern_name = value;
+
             // Create an index by name to help with lookups
             // This is useful when we need to find paint kits by their pattern names
             const normalizedName = value.toLowerCase();
@@ -234,12 +224,6 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
         }
       }
 
-      // Special case for standalone use_legacy_model flag (sometimes appears without a value)
-      if (trimmedLine === '"use_legacy_model"' && inPaintKits && currentPaintKit) {
-        // Some entries just have the flag without a value, treat as "1"
-        console.log(`Found standalone use_legacy_model flag for paint kit ${currentPaintKit}`);
-        data.paintKits[currentPaintKit].use_legacy_model = "1";
-      }
     }
 
     // Process skin mappings for easy lookup
@@ -269,12 +253,12 @@ export const parseItemsGame = async (): Promise<ItemsGameData> => {
 };
 
 /**
- * Check if a weapon model should use the legacy version based on the "use_legacy_model" flag
+ * Check if a weapon model should use the legacy version based on wear_remap_min/max flags
  * 
  * This function implements the detection logic for determining if a weapon skin should
  * use a legacy model. It checks:
- * 1. If the specific paint index is in our legacy model cache
- * 2. If not found, it checks the parsed items_game.txt data for the flag
+ * 1. If the specific paint index is in our wear_remap cache
+ * 2. If not found, it checks the parsed items_game.txt data for wear_remap entries
  * 3. If no specific flag is found for the skin, it falls back to checking the base weapon
  * 4. For patterns with known legacy indicators, it also checks pattern names
  * 
@@ -288,7 +272,7 @@ export const isLegacyModel = async (weaponName: string, paintIndex?: number): Pr
   try {
     console.log(`🔍 Checking legacy model status for weapon=${weaponName}, paintIndex=${paintIndex}`);
 
-    // Ensure legacy model cache is built
+    // Ensure wear remap cache is built
     await buildLegacyModelCache();
 
     // First check the cache for quick lookup - this avoids parsing the entire file each time
@@ -308,93 +292,63 @@ export const isLegacyModel = async (weaponName: string, paintIndex?: number): Pr
         return true;
       }
 
-      // Get additional information about the paint kit to check pattern names
+      // Get additional information about the paint kit to check wear remap or pattern names
       const data = await parseItemsGame();
       const paintKit = data.paintKits[paintIndexStr];
 
-      // If we have the paint kit data, check the pattern name for special keywords
-      if (paintKit && paintKit.name) {
-        const name = paintKit.name.toLowerCase();
-        // Check for pattern names that typically use legacy models
-        if (name.includes('printstream') ||
-          name.includes('asiimov') ||
-          name.includes('wildfire') ||
-          name.includes('empress') ||
-          name.includes('neo-noir') ||
-          name.includes('cortex') ||
-          name.includes('duality')) {
+      if (paintKit) {
+        // Prefer explicit wear remap flags
+        if (paintKit.wear_remap_min || paintKit.wear_remap_max) {
+          console.log(`? Wear remap found for paint index `);
+          legacyModelCache[paintIndexStr] = true;
+          if (paintKit.name) legacyModelCache[paintKit.name] = true;
+          return true;
+        }
+
+        // Fallback to pattern-name heuristics
+        if (paintKit.name) {
+          const name = paintKit.name.toLowerCase();
+          if (name.includes('printstream') ||
+            name.includes('asiimov') ||
+            name.includes('wildfire') ||
+            name.includes('empress') ||
+            name.includes('neo-noir') ||
+            name.includes('cortex') ||
+            name.includes('duality')) {
           console.log(`✅ Legacy model detected based on pattern name: ${name}`);
           // Add to cache for future reference
-          legacyModelCache[paintIndexStr] = true;
-          legacyModelCache[name] = true;
-          return true;
-        }
-      }
-    }
-
-    // If not found in cache, check directly in the parsed data
-    const data = await parseItemsGame();
-    console.log(`📚 Checking parsed data for legacy model flags`);
-
-    // If paintIndex is provided, check if this specific skin needs a legacy model
-    if (paintIndex) {
-      const paintKitKey = paintIndex.toString();
-      if (data.paintKits[paintKitKey]) {
-        const paintKit = data.paintKits[paintKitKey];
-
-        // Log the paint kit data for debugging (brief version)
-        console.log(`📋 Found paint kit data for index ${paintIndex} (${paintKit.name || 'unnamed'})`);
-        console.log(`   use_legacy_model flag:`, paintKit.use_legacy_model);
-
-        // Check if use_legacy_model flag exists for this skin
-        // The actual value could be "1" or any other non-empty value
-        if (paintKit.use_legacy_model &&
-          paintKit.use_legacy_model !== "0" &&
-          paintKit.use_legacy_model !== "false") {
-          console.log(`✅ Legacy model flag found for paint index ${paintIndex}: ${paintKit.use_legacy_model}`);
-
-          // Add to cache for future lookups
-          legacyModelCache[paintKitKey] = true;
-          if (paintKit.name) legacyModelCache[paintKit.name] = true;
-
-          return true;
-        } else {
-          console.log(`❌ No legacy model flag found for paint index ${paintIndex}`);
+            legacyModelCache[paintIndexStr] = true;
+            legacyModelCache[name] = true;
+            return true;
+          }
         }
       } else {
-        console.log(`⚠️ Paint kit ${paintIndex} not found in parsed data`);
-
-        // Try to search the raw file for the paint kit
-        // This helps catch cases where our parser missed something
+        console.log(`?? Paint kit  not found in parsed data`);
         await debugPaintKit(paintIndex);
       }
 
       // If no specific paint kit legacy flag found, try a deep search for the pattern
       console.log(`🔍 Performing deep search for paint kit ${paintIndex}`);
-      const deepSearchResult = await deepSearchPaintKit(paintKitKey);
+      const deepSearchResult = await deepSearchPaintKit(paintIndexStr);
       if (deepSearchResult) {
         console.log(`✅ Legacy model flag found through deep search for paint index ${paintIndex}`);
         return true;
       }
     }
 
-    // If no specific skin legacy setting was found, check the base weapon
-    // Normalize weapon name for matching
+    // If no specific skin wear_remap setting was found, check the base weapon
+    const data = await parseItemsGame();
     const normalizedName = weaponName.toLowerCase().replace(/\s/g, '');
     console.log(`🔍 No specific skin legacy flag found, checking base weapon: ${normalizedName}`);
 
     // Find items that match this weapon
     for (const [itemId, itemData] of Object.entries(data.items)) {
       if (itemData.name?.includes(normalizedName)) {
-        // Check if legacy_model flag exists and is true
         const isLegacy = itemData.legacy_model === true || itemData.legacy_model === 'true' || itemData.legacy_model === '1';
         console.log(`🔍 Base weapon ${weaponName} legacy model flag:`, itemData.legacy_model, 'Using legacy:', isLegacy);
 
-        // If we found a legacy flag, add this weapon to the cache to speed up future lookups
         if (isLegacy) {
           legacyModelCache[normalizedName] = true;
-
-          // Also add specific weapon+paintIndex combo to cache if applicable
           if (paintIndex) {
             legacyModelCache[`${normalizedName}_${paintIndex}`] = true;
           }
@@ -442,20 +396,20 @@ export const buildLegacyModelCache = async (): Promise<void> => {
       if (!/^\d+$/.test(paintKitId)) continue;
 
       // If this paint kit has use_legacy_model flag set to anything but "0" or "false"
-      if (paintKitData.use_legacy_model &&
-        paintKitData.use_legacy_model !== "0" &&
-        paintKitData.use_legacy_model !== "false") {
-        // Add entries by ID and pattern name
-        legacyModels[paintKitId] = true;
+      // if (paintKitData.use_legacy_model &&
+      //   paintKitData.use_legacy_model !== "0" &&
+      //   paintKitData.use_legacy_model !== "false") {
+      //   // Add entries by ID and pattern name
+      //   legacyModels[paintKitId] = true;
 
-        // Also store by pattern name if available
-        if (paintKitData.name) {
-          legacyModels[paintKitData.name] = true;
-          console.log(`✅ Added legacy model mapping for paint kit ${paintKitId} (${paintKitData.name})`);
-        } else {
-          console.log(`✅ Added legacy model mapping for paint kit ${paintKitId} (unnamed)`);
-        }
-      }
+      //   // Also store by pattern name if available
+      //   if (paintKitData.name) {
+      //     legacyModels[paintKitData.name] = true;
+      //     console.log(`✅ Added legacy model mapping for paint kit ${paintKitId} (${paintKitData.name})`);
+      //   } else {
+      //     console.log(`✅ Added legacy model mapping for paint kit ${paintKitId} (unnamed)`);
+      //   }
+      // }
     }
 
     // Store the result in our cache
@@ -492,7 +446,6 @@ export const getSkinInfo = async (weaponName: string, paintIndex: number): Promi
         return {
           name: `${weaponName}_${paintIndex}`,
           description_tag: `#PaintKit_${weaponName}_${paintIndex}_Tag`,
-          use_legacy_model: "1"
         };
       }
 
@@ -511,6 +464,81 @@ export const getSkinInfo = async (weaponName: string, paintIndex: number): Promi
     return paintKit;
   } catch (error) {
     console.error(`Error getting skin info for ${weaponName} with paint index ${paintIndex}:`, error);
+    return null;
+  }
+};
+
+/**
+ * Get the raw paint kit entry for a paint index directly from items_game.txt.
+ * This is useful when we need to inspect properties like wear_remap_min/max.
+ */
+export const getPaintKitByIndex = async (paintIndex: number): Promise<PaintKitData | null> => {
+  if (paintIndex === undefined || paintIndex === null) return null;
+
+  try {
+    const data = await parseItemsGame();
+    const paintKitKey = paintIndex.toString();
+    let existing = data.paintKits[paintKitKey];
+
+    // Helper: fetch directly from the raw items_game.txt block
+    const parseFromRaw = async (): Promise<PaintKitData | null> => {
+      const raw = await fetch('/items_game.txt');
+      if (!raw.ok) return null;
+      const content = await raw.text();
+      const regex = new RegExp(`"${paintKitKey}"\\s*\\{[^}]*\\}`, 'g');
+      const matches = [...content.matchAll(regex)];
+      if (!matches.length) return null;
+
+      // Prefer blocks that look like weapon paintkits (wear_remap*), otherwise those with paintkit-looking names.
+      const segments = matches.map(m => m[0]);
+      const wearSegments = segments.filter(seg => seg.includes('wear_remap_min') || seg.includes('wear_remap_max'));
+      const nameSegments = segments.filter(seg => /"name"\\s*"[a-z0-9_]+"/i.test(seg));
+      const block = wearSegments[0] || nameSegments[0] || segments[0];
+
+      const nameMatch = block.match(/"name"\\s*"([^"]*)"/);
+      const wearMinMatch = block.match(/"wear_remap_min"\\s*"([^"]*)"/);
+      const wearMaxMatch = block.match(/"wear_remap_max"\\s*"([^"]*)"/);
+
+      const parsed: PaintKitData = {
+        id: Number(paintKitKey),
+        name: nameMatch ? nameMatch[1] : `${paintKitKey}`,
+        pattern_name: nameMatch ? nameMatch[1] : undefined,
+        wear_remap_min: wearMinMatch ? wearMinMatch[1] : undefined,
+        wear_remap_max: wearMaxMatch ? wearMaxMatch[1] : undefined
+      };
+
+      // Cache it into parsed data for future lookups
+      data.paintKits[paintKitKey] = parsed;
+      if (parsed.pattern_name) {
+        const normalizedName = parsed.pattern_name.toLowerCase();
+        if (!data.paintKits[normalizedName]) {
+          data.paintKits[normalizedName] = parsed;
+        }
+      }
+
+      return parsed;
+    };
+
+    if (existing) {
+      // Ensure pattern_name is populated even if the parser missed it
+      if (!existing.pattern_name && existing.name) {
+        existing.pattern_name = existing.name;
+      }
+
+      // If the stored pattern looks like a user-facing name (contains spaces or pipes), try to refresh from raw file
+      const looksLikeDisplayName = Boolean(existing.pattern_name && /[\\s|]/.test(existing.pattern_name));
+      if (looksLikeDisplayName) {
+        const refreshed = await parseFromRaw();
+        if (refreshed) return refreshed;
+      }
+
+      return existing;
+    }
+
+    // Fallback: try to extract directly from raw items_game.txt if parser missed it
+    return await parseFromRaw();
+  } catch (error) {
+    console.error(`Error retrieving paint kit ${paintIndex} from items_game.txt:`, error);
     return null;
   }
 };
@@ -542,15 +570,15 @@ export const debugPaintKit = async (paintIndex: number): Promise<void> => {
       const paintKit = data.paintKits[paintKitKey];
       console.log(`✅ Paint kit ${paintIndex} found in parsed data:`, paintKit);
       console.log('Name:', paintKit.name);
-      console.log('use_legacy_model flag:', paintKit.use_legacy_model);
-      console.log('Raw property type:', typeof paintKit.use_legacy_model);
+      // console.log('use_legacy_model flag:', paintKit.use_legacy_model);
+      // console.log('Raw property type:', typeof paintKit.use_legacy_model);
 
       // Determine if this should be a legacy model
-      const shouldUseLegacy = paintKit.use_legacy_model &&
-        paintKit.use_legacy_model !== "0" &&
-        paintKit.use_legacy_model !== "false";
+      // const shouldUseLegacy = paintKit.use_legacy_model &&
+      //   paintKit.use_legacy_model !== "0" &&
+      //   paintKit.use_legacy_model !== "false";
 
-      console.log('Should use legacy model based on flag?', shouldUseLegacy);
+      // console.log('Should use legacy model based on flag?', shouldUseLegacy);
 
       // Check by pattern name in cache
       if (paintKit.name && knownLegacyModels[paintKit.name]) {
@@ -748,4 +776,12 @@ export const deepSearchPaintKit = async (paintKitId: string): Promise<boolean> =
     console.error(`Error in deep search for paint kit ${paintKitId}:`, error);
     return false;
   }
+};
+
+/**
+ * Helper so callers don’t re-parse:
+ */
+export const getPaintKitPatternName = async (paintIndex: number): Promise<string | null> => {
+  const kit = await getPaintKitByIndex(paintIndex);
+  return kit?.pattern_name || kit?.name || null;
 };

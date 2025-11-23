@@ -14,7 +14,9 @@ import {
 } from '../utils/modelPathResolver';
 import {
   isLegacyModel,
-  getSkinInfo
+  getSkinInfo,
+  getPaintKitByIndex,
+  getPaintKitPatternName
 } from '../utils/itemsGameParser';
 import { parseVMAT, parseVCOMPMAT, VMATData } from '../vmatParser';
 import * as THREE from 'three';
@@ -152,224 +154,84 @@ const WeaponModel: React.FC<{
   // Apply textures from VMAT/VCOMPMAT files - this is where the magic happens (hopefully)
   useEffect(() => {
     const loadMaterials = async () => {
-      if (!scene || !itemData?.paintindex) {
-        console.log("No scene or paintindex, skipping material loading");
-        setIsLoaded(true);
-        return;
-      }
-
-      // Remove all materials from the model before loading new ones
-      scene.traverse((child: THREE.Object3D) => {
-        if (child instanceof THREE.Mesh && child.geometry) {
-          const geometry = child.geometry;
-          if (geometry.hasAttribute('uv') && geometry.hasAttribute('normal')) {
-            geometry.computeTangents();
-            console.log(`✅ Computed tangents for mesh: ${child.name}`);
-          } else {
-            console.warn(`⚠️ Mesh ${child.name} lacks UV or normal attributes, cannot compute tangents.`);
-          }
-        }
-      });
-
       try {
-
-        // First determine if we're using a legacy model for this weapon/skin
-        const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
-        const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
-        console.log(`🔧 Material loading: Using legacy model? ${useLegacyModel} for ${baseWeaponName}`);
-
-        // Get skin info first to get the normalized name
-        const skinInfo = await getSkinInfo(itemData.full_item_name, itemData.paintindex);
-        if (!skinInfo) {
-          console.log("No skin info found, using gray material");
-          applyGrayMaterial();
-          setIsLoaded(true);
+        if (!scene || !itemData?.paintindex) { // Changed from paint_index to paintindex
+          console.log('[MaterialLoader] No scene or paint index available');
           return;
         }
 
-        console.log(`Found skin: ${skinInfo.name}`);
+        console.log('[MaterialLoader] Starting material loading process');
+        console.log('[MaterialLoader] Item data:', itemData);
 
-        // --- Enhanced normalization: weapon + skin + phase/variant ---
+        // Get the paint kit data to find the pattern name
+        const paintIndex = itemData.paintindex;
+        const patternName = await getPaintKitPatternName(paintIndex);
+        const fallbackId = paintIndex.toString();
+        console.log(`[MaterialLoader] Using items_game pattern for paint kit ${fallbackId}: ${patternName || fallbackId}`);
 
-        // Extract weapon name (e.g., "Glock-18 | Gamma Doppler (Factory New)" -> "glock")
-        let weaponName = '';
-        if (skinInfo.name.includes('|')) {
-          weaponName = skinInfo.name.split('|')[0].trim().toLowerCase();
-          // Remove stattrak or souvenir prefix if present
-          weaponName = weaponName.replace(/^(stattrak(™|tm)?|souvenir)\s*/i, '');
-          weaponName = weaponName.replace(/[^a-z0-9]/g, '');
-        }
+        const basePath = '/materials/_PreviewMaterials/materials/models/weapons/customization/paints';
+        const searchNames = patternName ? [patternName, fallbackId] : [fallbackId];
 
-        // Extract skin name (e.g., "Gamma Doppler")
-        let skinNameOnly = skinInfo.name;
-        if (skinNameOnly.includes('|')) {
-          skinNameOnly = skinNameOnly.split('|')[1].trim();
-        }
-        // Remove stattrak or souvenir prefix if present
-        skinNameOnly = skinNameOnly.replace(/^(stattrak(™|tm)?|souvenir)\s*/i, '');
-        // Remove condition in parentheses like "(Factory New)", etc.
-        skinNameOnly = skinNameOnly.replace(/\s*\([^)]*\).*$/, '').trim().toLowerCase();
+        const vmatPaths = searchNames.flatMap((name) => [
+          `${basePath}/vmats/${name}.vmat`,
+          `${basePath}/custom_paints/vmats/${name}.vmat`
+        ]);
 
-        // --- Phase/variant extraction: Prefer imageurl, fallback to skin name ---
+        console.log('[MaterialLoader] Attempting to load VMAT from these paths:', vmatPaths);
 
-        let phase = '';
-        // Try to extract from imageurl first
-        const phaseRegex = /_(phase[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)_/i;
-        if (itemData.imageurl) {
-          const match = itemData.imageurl.match(phaseRegex);
-          if (match) {
-            phase = match[1].toLowerCase();
-          }
-        }
-        // If not found in imageurl, fallback to skin name (but do NOT match 'doppler' as a phase)
-        if (!phase) {
-          const phaseMatch = skinNameOnly.match(/(phase\s*[0-9]+|emerald|ruby|sapphire|blackpearl|ultraviolet|pearl|jade|marblefade|tigerstripe|amethyst)$/i);
-          if (phaseMatch) {
-            phase = phaseMatch[1].toLowerCase().replace(/\s+/g, '');
-            skinNameOnly = skinNameOnly.replace(phaseMatch[1], '').trim();
-          }
-        }
-        // Remove all non-alphanumeric from skinNameOnly after phase extraction
-        skinNameOnly = skinNameOnly.replace(/[^a-z0-9]/g, '');
-
-        // Compose normalized key: weapon + skin + phase (if any)
-        let normalizedName = weaponName + skinNameOnly + (phase ? phase : '');
-
-        // Fallback: if no weapon name, just use skinNameOnly + phase
-        if (!weaponName) {
-          normalizedName = skinNameOnly + (phase ? phase : '');
-        }
-
-        console.log(`Normalized skin key: ${normalizedName}`);
-
-        // Check material aliases for the correct pattern name
-        const { MATERIAL_ALIASES } = await import('../materialAliases');
-        const patternName = MATERIAL_ALIASES[normalizedName]; if (!patternName) {
-          console.log(`No pattern found for skin: ${normalizedName}`);
-          applyGrayMaterial();
-          setIsLoaded(true);
-          return;
-        }
-
-        console.log(`Using pattern: ${patternName}`);
-
-        // Try to load VMAT file first
-        let materialData: VMATData | null = null;
         let foundFile = false;
+        let vmatText = '';
 
-        // First priority: VMAT files
-        const vmatPath = `/materials/_PreviewMaterials/materials/models/weapons/customization/paints/vmats/${patternName}.vmat`;
-        console.log(`Trying VMAT path: ${vmatPath}`);
+        // Try each path until we find one that works
+        for (const vmatPath of vmatPaths) {
+          try {
+            console.log(`[MaterialLoader] Trying VMAT path: ${vmatPath}`);
+            const vmatResponse = await fetch(vmatPath);
 
-        try {
-          const vmatResponse = await fetch(vmatPath, {
-            headers: {
-              'Accept': 'application/octet-stream, text/plain, */*'
-            }
-          });
+            if (vmatResponse.ok) {
+              const contentType = vmatResponse.headers.get('content-type');
+              vmatText = await vmatResponse.text();
 
-          if (vmatResponse.ok) {
-            const contentType = vmatResponse.headers.get('content-type');
-            console.log(`VMAT Content-Type: ${contentType}`);
-
-            const vmatText = await vmatResponse.text();
-
-            // Check if we're getting HTML instead of the actual file
-            if (contentType && contentType.includes('text/html')) {
-              console.log(`❌ VMAT file returned HTML (likely 404): ${patternName}.vmat`);
-            } else if (vmatText.trim().startsWith('<!DOCTYPE') || vmatText.trim().startsWith('<html')) {
-              console.log(`❌ VMAT file content is HTML (file not found): ${patternName}.vmat`);
-            } else {
-              // Pass the file PATH to parseVMAT, not the content
-              materialData = await parseVMAT(vmatPath);
-              foundFile = true;
-              console.log(`✅ Found VMAT file: ${patternName}.vmat`);
-            }
-          } else {
-            console.log(`❌ VMAT file HTTP error ${vmatResponse.status}: ${patternName}.vmat`);
-          }
-        } catch (error) {
-          console.log(`❌ VMAT file not found: ${patternName}.vmat`, error);
-        }
-
-        // Fallback: VCOMPMAT files if VMAT not found
-        if (!foundFile) {
-          console.log("VMAT not found, searching VCOMPMAT files...");
-
-          // Common VCOMPMAT subfolders based on your screenshot
-          const vcompmatFolders = [
-            'items',
-            'assets',
-            'paintkits',
-            'community',
-            'legacy',
-            'limited_time',
-            'set_graphic_design',
-            'set_overpass_2024',
-            'set_realism_camo',
-            'set_train_2025',
-            'timed_drops',
-            'workshop',
-            'community/community_33',
-            'community/community_34',
-            'community/community_35',
-            'community/community_36'
-          ];
-
-
-
-          for (const folder of vcompmatFolders) {
-            const vcompmatPath = `/materials/_PreviewMaterials/materials/weapons/paints/${folder}/${patternName}.vcompmat`;
-            console.log(`Trying VCOMPMAT path: ${vcompmatPath}`);
-
-            try {
-              const vcompmatResponse = await fetch(vcompmatPath, {
-                headers: {
-                  'Accept': 'application/octet-stream, text/plain, */*'
-                }
-              });
-
-              if (vcompmatResponse.ok) {
-                const contentType = vcompmatResponse.headers.get('content-type');
-                console.log(`VCOMPMAT Content-Type: ${contentType}`);
-
-                const vcompmatText = await vcompmatResponse.text();
-
-                // Check if we're getting HTML instead of the actual file
-                if (contentType && contentType.includes('text/html')) {
-                  console.log(`❌ VCOMPMAT file returned HTML (likely 404): ${folder}/${patternName}.vcompmat`);
-                } else if (vcompmatText.trim().startsWith('<!DOCTYPE') || vcompmatText.trim().startsWith('<html')) {
-                  console.log(`❌ VCOMPMAT file content is HTML (file not found): ${folder}/${patternName}.vcompmat`);
-                } else {
-                  // parseVCOMPMAT expects content, so pass the text
-                  materialData = await parseVCOMPMAT(vcompmatText);
-                  foundFile = true;
-                  console.log(`✅ Found VCOMPMAT file: ${folder}/${patternName}.vcompmat`);
-                  break;
-                }
-              } else {
-                console.log(`❌ VCOMPMAT file HTTP error ${vcompmatResponse.status}: ${folder}/${patternName}.vcompmat`);
+              // Validate it's not an HTML error page
+              if (contentType && contentType.includes('text/html')) {
+                console.log(`[MaterialLoader] Path ${vmatPath} returned HTML (404 page), skipping`);
+                continue;
               }
-            } catch (error) {
-              console.log(`❌ VCOMPMAT not found: ${folder}/${patternName}.vcompmat`, error);
+
+              if (vmatText.trim().startsWith('<!DOCTYPE') || vmatText.trim().startsWith('<html')) {
+                console.log(`[MaterialLoader] Path ${vmatPath} contains HTML content, skipping`);
+                continue;
+              }
+
+              // If we got valid VMAT content, use it
+              console.log(`[MaterialLoader] ✅ Successfully loaded VMAT from ${vmatPath}`);
+              foundFile = true;
+              break;
+            } else {
+              console.log(`[MaterialLoader] Path ${vmatPath} returned ${vmatResponse.status}, trying next path`);
             }
+          } catch (error) {
+            console.log(`[MaterialLoader] Error loading ${vmatPath}:`, error);
           }
         }
 
-        if (!foundFile || !materialData) {
-          console.log("No material files found, using gray material");
-          applyGrayMaterial();
-          setIsLoaded(true);
+        if (!foundFile) {
+          console.warn(`[MaterialLoader] ❌ Could not find VMAT file for paint kit ${paintIndex} (${patternName})`);
+          console.warn('[MaterialLoader] Tried paths:', vmatPaths);
           return;
-        }        // Apply the loaded material data to the scene
-        await applyMaterialToScene(materialData, patternName, useLegacyModel);
+        }
+
+        // Parse the VMAT file to extract texture paths
+        console.log('[MaterialLoader] Parsing VMAT file content');
+        const materialData = await parseVMAT(vmatText);
+        console.log('[MaterialLoader] Parsed material data:', materialData);
+
+        // Extract and apply textures - FIXED ARGUMENT ORDER
+        await applyMaterialToScene(materialData, patternName || fallbackId, false);
 
       } catch (error) {
-        console.error("Error loading materials:", error);
-        applyGrayMaterial();
+        console.error('[MaterialLoader] Error in loadMaterials:', error);
       }
-
-      setIsLoaded(true);
     };
 
     // Helper function to apply gray material as fallback
