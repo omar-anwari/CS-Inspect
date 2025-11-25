@@ -38,10 +38,9 @@ public/models/**/*
 !public/models/**/.gitkeep
 src/CS/csgo_customweapon_vulkan_50_features.txt
 src/CS/Technical Overview.txt
-# Ignore glove assets
+
 public/gloves/**
 public/characters/models/shared/arms/glove_**/
 
-# Keep the directory markers
 !public/gloves/.gitkeep
 !public/characters/models/shared/arms/glove_*/.gitkeep
