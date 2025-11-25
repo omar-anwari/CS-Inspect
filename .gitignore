@@ -44,3 +44,28 @@ public/characters/models/shared/arms/glove_**/
 
 !public/gloves/.gitkeep
 !public/characters/models/shared/arms/glove_*/.gitkeep
+# Ignore glove/character assets but keep folders
+public/gloves/**/*
+!public/gloves/
+!public/gloves/**/
+!public/gloves/**/.gitkeep
+
+public/characters/**/*
+!public/characters/
+!public/characters/**/
+!public/characters/**/.gitkeep
+# Ignore glove/character/patch assets but keep folders
+public/gloves/**/*
+!public/gloves/
+!public/gloves/**/
+!public/gloves/**/.gitkeep
+
+public/characters/**/*
+!public/characters/
+!public/characters/**/
+!public/characters/**/.gitkeep
+
+public/patches/**/*
+!public/patches/
+!public/patches/**/
+!public/patches/**/.gitkeep
