@@ -43,6 +43,7 @@ export interface PaintKitData {
   vmt_path?: string;
   wear_remap_min?: number;
   wear_remap_max?: number;
+  has_vmt_overrides?: boolean;
   style?: string;
 }
 
@@ -496,22 +497,25 @@ export const getPaintKitByIndex = async (paintIndex: number): Promise<PaintKitDa
       const matches = [...content.matchAll(regex)];
       if (!matches.length) return null;
 
-      // Prefer blocks that look like weapon paintkits (wear_remap*), otherwise those with paintkit-looking names.
+      // Prefer blocks that look like weapon/glove paintkits (wear_remap* or vmt_overrides), otherwise those with paintkit-looking names.
       const segments = matches.map(m => m[0]);
       const wearSegments = segments.filter(seg => seg.includes('wear_remap_min') || seg.includes('wear_remap_max'));
+      const gloveSegments = segments.filter(seg => seg.includes('vmt_overrides'));
       const nameSegments = segments.filter(seg => /"name"\\s*"[a-z0-9_]+"/i.test(seg));
-      const block = wearSegments[0] || nameSegments[0] || segments[0];
+      const block = wearSegments[0] || gloveSegments[0] || nameSegments[0] || segments[0];
 
       const nameMatch = block.match(/"name"\\s*"([^"]*)"/);
       const wearMinMatch = block.match(/"wear_remap_min"\\s*"([^"]*)"/);
       const wearMaxMatch = block.match(/"wear_remap_max"\\s*"([^"]*)"/);
+      const hasVmtOverrides = block.includes('vmt_overrides');
 
       const parsed: PaintKitData = {
         id: Number(paintKitKey),
         name: nameMatch ? nameMatch[1] : `${paintKitKey}`,
         pattern_name: nameMatch ? nameMatch[1] : undefined,
         wear_remap_min: wearMinMatch ? parseFloat(wearMinMatch[1]) : undefined, // Fix: Parse as number
-        wear_remap_max: wearMaxMatch ? parseFloat(wearMaxMatch[1]) : undefined  // Fix: Parse as number
+        wear_remap_max: wearMaxMatch ? parseFloat(wearMaxMatch[1]) : undefined,  // Fix: Parse as number
+        has_vmt_overrides: hasVmtOverrides
       };
 
       // Cache it into parsed data for future lookups
@@ -843,9 +847,10 @@ export const getPaintKitPatternName = async (paintIndex: number): Promise<string
     const matches = [...text.matchAll(paintKitRegex)].map(m => m[0]);
 
     if (matches.length > 0) {
-      // Prefer the block that looks like a weapon paint kit (has wear_remap/use_legacy flags)
+      // Prefer the block that looks like a weapon paint kit (has wear_remap/use_legacy flags) or gloves (vmt_overrides)
       const preferredBlock =
         matches.find(block => block.includes('wear_remap_min') || block.includes('wear_remap_max')) ||
+        matches.find(block => block.includes('vmt_overrides')) ||
         matches.find(block => block.includes('use_legacy_model')) ||
         matches.find(block => /"description_tag"/.test(block)) ||
         matches.find(block => /"name"\s+"[a-z0-9_]+"/i.test(block)) ||

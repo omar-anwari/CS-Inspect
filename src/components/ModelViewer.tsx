@@ -10,7 +10,12 @@ import {
 } from '@react-three/drei';
 import {
   getBaseWeaponName,
-  resolveModelPath
+  resolveModelPath,
+  getBaseGloveName,
+  resolveGloveModelPath,
+  detectItemType,
+  getAgentFolderFromName,
+  resolveAgentModelCandidates
 } from '../utils/modelPathResolver';
 import {
   isLegacyModel,
@@ -108,7 +113,8 @@ const WeaponModel: React.FC<{
   autoRotate?: boolean;
   modelScale?: number;
   onModelLoaded?: () => void;
-}> = ({ path, itemData, autoRotate = true, modelScale = 0.1, onModelLoaded }) => {
+  itemType?: 'weapon' | 'glove' | 'agent';
+}> = ({ path, itemData, autoRotate = true, modelScale = 0.1, onModelLoaded, itemType = 'weapon' }) => {
   // State for when things go wrong (which is often)
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -153,6 +159,13 @@ const WeaponModel: React.FC<{
   useEffect(() => {
     const loadMaterials = async () => {
       try {
+        // Only weapons currently use the custom material pipeline
+        if (itemType !== 'weapon') {
+          console.log('[MaterialLoader] Skipping material load for item type:', itemType);
+          setIsLoaded(true);
+          return;
+        }
+
         if (!scene || !itemData?.paintindex) {
           console.log('[MaterialLoader] No scene or paint index available');
           return;
@@ -415,7 +428,7 @@ const WeaponModel: React.FC<{
     };
 
     loadMaterials();
-  }, [scene, itemData]);
+  }, [scene, itemData, itemType]);
 
   useFrame(() => {
     if (modelRef.current) {
@@ -447,17 +460,23 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   const containerRef = useRef<HTMLDivElement>(null);
   const [modelScale, setModelScale] = useState(0.1);
   const [modelLoaded, setModelLoaded] = useState(false);
+  const [itemType, setItemType] = useState<'weapon' | 'glove' | 'agent'>('weapon');
 
   // Responsive scaling effect (use ResizeObserver for initial and dynamic sizing)
   useEffect(() => {
+    const calcScale = (minDim: number) => {
+      const base = Math.max(0.08, Math.min(0.5, minDim / 4000));
+      const typeBoost = itemType === 'glove' ? 1 : 1; // gloves are small, but not too close
+      return Math.min(base * typeBoost, 0.2);
+    };
+
     const updateScale = () => {
       if (!containerRef.current) return;
       const { width, height } = containerRef.current.getBoundingClientRect();
       const minDim = Math.min(width, height);
       // Make the model much smaller (about 1/5 the width/height of the container)
       // Further increase the denominator to shrink the model more
-      const scale = Math.max(0.08, Math.min(0.5, minDim / 4000));
-      setModelScale(scale);
+      setModelScale(calcScale(minDim));
     };
 
     updateScale(); // Initial call
@@ -478,7 +497,7 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
         window.removeEventListener('resize', updateScale);
       }
     };
-  }, []);
+  }, [itemType]);
 
   // Re-run scale update when model is loaded, with a short delay to ensure DOM/canvas is ready
   useEffect(() => {
@@ -491,14 +510,15 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
             const minDim = Math.min(width, height);
             // Make the model much smaller (about 1/5 the width/height of the container)
             // Further increase the denominator to shrink the model more
-            const scale = Math.max(0.08, Math.min(0.5, minDim / 4000));
-            setModelScale(scale);
+            const base = Math.max(0.08, Math.min(0.5, minDim / 4000));
+            const typeBoost = itemType === 'glove' ? 1 : 1;
+            setModelScale(Math.min(base * typeBoost, 0.8));
           }
         }, 30); // 30ms delay to allow DOM/canvas to settle
       });
       return () => window.cancelAnimationFrame(handle);
     }
-  }, [modelLoaded]);
+  }, [modelLoaded, itemType]);
   // State for model path, loading, and error
   const [modelPath, setModelPath] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -511,7 +531,12 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   const checkFileExists = async (url: string): Promise<boolean> => {
     try {
       const response = await fetch(url, { method: 'HEAD' });
-      return response.ok;
+      if (!response.ok) return false;
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) return false;
+
+      return true;
     } catch (error) {
       console.error("Error checking file existence:", error);
       return false;
@@ -519,9 +544,19 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   };
   // Figure out which model to load based on the item data
   useEffect(() => {
+    const pickFirstExisting = async (paths: string[]): Promise<string | null> => {
+      for (const path of paths) {
+        if (!path) continue;
+        const exists = await checkFileExists(path);
+        if (exists) return path;
+      }
+      return null;
+    };
+
     const loadModel = async () => {
       if (!itemData) {
         setLoading(false);
+        setModelPath('');
         return;
       }
 
@@ -529,40 +564,51 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
         setLoading(true);
         console.log('Loading model for item:', itemData.full_item_name);
 
-        // Extract the base weapon name from the full item name
-        const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
-        console.log('Base weapon name:', baseWeaponName);
+        const detectedType = detectItemType(itemData.full_item_name);
+        setItemType(detectedType);
 
-        // Check if this weapon/skin combination requires a legacy model
-        const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
-        console.log('Should use legacy model:', useLegacyModel);
+        let candidates: string[] = [];
+        let debugLabel = '';
 
-        // Resolve the model path with legacy flag
-        const resolvedPath = resolveModelPath(baseWeaponName, useLegacyModel);
-        console.log('Resolved model path:', resolvedPath);
+        if (detectedType === 'agent') {
+          setError('Agent models are temporarily disabled.');
+          setModelPath('');
+          return;
+        }
 
-        if (resolvedPath) {
-          // Check if the model file exists
-          const exists = await checkFileExists(resolvedPath);
-          if (exists) {
-            setModelPath(resolvedPath);
-            setError(null);
-          } else {
-            // If the preferred model doesn't exist, try the other version as a fallback
-            const fallbackPath = resolveModelPath(baseWeaponName, !useLegacyModel);
-            console.log('Trying fallback model path:', fallbackPath);
-
-            const fallbackExists = await checkFileExists(fallbackPath);
-            if (fallbackExists) {
-              console.log('Using fallback model:', fallbackPath);
-              setModelPath(fallbackPath);
-              setError(null);
-            } else {
-              setError(`Model file not found: ${resolvedPath} (fallback also failed: ${fallbackPath})`);
-            }
-          }
+        if (detectedType === 'glove') {
+          const baseGloveName = getBaseGloveName(itemData.full_item_name);
+          console.log('Base glove name:', baseGloveName);
+          const worldPath = resolveGloveModelPath(baseGloveName, true);
+          const viewPath = resolveGloveModelPath(baseGloveName, false);
+          // Prefer world-model (w_) first, then view-model (v_) as fallback
+          candidates = [worldPath, viewPath].filter(Boolean);
+          debugLabel = `glove ${baseGloveName}`;
         } else {
-          setError(`Could not resolve model path for: ${baseWeaponName}`);
+          // Extract the base weapon name from the full item name
+          const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
+          console.log('Base weapon name:', baseWeaponName);
+
+          // Check if this weapon/skin combination requires a legacy model
+          const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
+          console.log('Should use legacy model:', useLegacyModel);
+
+          // Resolve the model path with legacy flag
+          const resolvedPath = resolveModelPath(baseWeaponName, useLegacyModel);
+          const fallbackPath = resolveModelPath(baseWeaponName, !useLegacyModel);
+
+          candidates = [resolvedPath, fallbackPath].filter(Boolean);
+          debugLabel = `weapon ${baseWeaponName}`;
+        }
+
+        const foundPath = await pickFirstExisting(candidates);
+
+        if (foundPath) {
+          console.log('Resolved model path:', foundPath);
+          setModelPath(foundPath);
+          setError(null);
+        } else {
+          setError(`Model file not found (${debugLabel})`);
         }
       } catch (err) {
         const error = err as Error;
@@ -666,7 +712,7 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
 
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
           <ErrorBoundary fallback={<Box args={[1, 1, 1]} material={new THREE.MeshNormalMaterial()} />}>
-            {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} modelScale={modelScale} onModelLoaded={() => setModelLoaded(true)} />}
+            {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} modelScale={modelScale} itemType={itemType} onModelLoaded={() => setModelLoaded(true)} />}
             {/* Warm HDRI for subtle reflections */}
             <Environment preset="sunset" background={false} blur={0.2} />
             <fog attach="fog" args={['#000000', 10, 50]} />
