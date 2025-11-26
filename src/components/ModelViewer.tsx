@@ -181,7 +181,7 @@ const WeaponModel: React.FC<{
 
         // Get the actual pattern name from items_game.txt
         const patternName = await getPaintKitPatternName(itemData.paintindex);
-        
+
         if (!patternName) {
           console.error('[MaterialLoader] Could not find pattern name for paint index:', itemData.paintindex);
           applyGrayMaterial();
@@ -190,7 +190,7 @@ const WeaponModel: React.FC<{
         }
 
         console.log(`[MaterialLoader] Using pattern name for paint kit ${itemData.paintindex}: ${patternName}`);
-        
+
         // Parallelize material file loads - fire all attempts simultaneously
         const loadMaterialData = async (): Promise<VMATData | null> => {
           // Use the pattern name, not the paint index
@@ -575,52 +575,58 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
           setModelPath('');
           return;
         }
+        //Commented out until I figure out agent models
+        // if (detectedType === 'agent') {
+        //   const agentFolder = getAgentFolderFromName(itemData.full_item_name);
+        //   candidates = agentFolder ? resolveAgentModelCandidates(agentFolder) : [];
+        //   debugLabel = `agent ${agentFolder ?? 'unknown'}`;
+        // }
 
-        if (detectedType === 'glove') {
-          const baseGloveName = getBaseGloveName(itemData.full_item_name);
-          console.log('Base glove name:', baseGloveName);
-          const worldPath = resolveGloveModelPath(baseGloveName, true);
-          const viewPath = resolveGloveModelPath(baseGloveName, false);
-          // Prefer world-model (w_) first, then view-model (v_) as fallback
-          candidates = [worldPath, viewPath].filter(Boolean);
-          debugLabel = `glove ${baseGloveName}`;
-        } else {
-          // Extract the base weapon name from the full item name
-          const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
-          console.log('Base weapon name:', baseWeaponName);
+          if (detectedType === 'glove') {
+            const baseGloveName = getBaseGloveName(itemData.full_item_name);
+            console.log('Base glove name:', baseGloveName);
+            const worldPath = resolveGloveModelPath(baseGloveName, true);
+            const viewPath = resolveGloveModelPath(baseGloveName, false);
+            // Prefer world-model (w_) first, then view-model (v_) as fallback
+            candidates = [worldPath, viewPath].filter(Boolean);
+            debugLabel = `glove ${baseGloveName}`;
+          } else {
+            // Extract the base weapon name from the full item name
+            const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
+            console.log('Base weapon name:', baseWeaponName);
 
-          // Check if this weapon/skin combination requires a legacy model
-          const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
-          console.log('Should use legacy model:', useLegacyModel);
+            // Check if this weapon/skin combination requires a legacy model
+            const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
+            console.log('Should use legacy model:', useLegacyModel);
 
-          // Resolve the model path with legacy flag
-          const resolvedPath = resolveModelPath(baseWeaponName, useLegacyModel);
-          const fallbackPath = resolveModelPath(baseWeaponName, !useLegacyModel);
+            // Resolve the model path with legacy flag
+            const resolvedPath = resolveModelPath(baseWeaponName, useLegacyModel);
+            const fallbackPath = resolveModelPath(baseWeaponName, !useLegacyModel);
 
-          candidates = [resolvedPath, fallbackPath].filter(Boolean);
-          debugLabel = `weapon ${baseWeaponName}`;
+            candidates = [resolvedPath, fallbackPath].filter(Boolean);
+            debugLabel = `weapon ${baseWeaponName}`;
+          }
+
+          const foundPath = await pickFirstExisting(candidates);
+
+          if (foundPath) {
+            console.log('Resolved model path:', foundPath);
+            setModelPath(foundPath);
+            setError(null);
+          } else {
+            setError(`Model file not found (${debugLabel})`);
+          }
+        } catch (err) {
+          const error = err as Error;
+          console.error('Error loading model:', error);
+          setError(error.message);
+        } finally {
+          setLoading(false);
         }
+      };
 
-        const foundPath = await pickFirstExisting(candidates);
-
-        if (foundPath) {
-          console.log('Resolved model path:', foundPath);
-          setModelPath(foundPath);
-          setError(null);
-        } else {
-          setError(`Model file not found (${debugLabel})`);
-        }
-      } catch (err) {
-        const error = err as Error;
-        console.error('Error loading model:', error);
-        setError(error.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadModel();
-  }, [itemData]);
+      loadModel();
+    }, [itemData]);
 
   // Camera and controls types
   type CameraWithFOV = THREE.Camera & {
