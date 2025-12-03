@@ -15,13 +15,15 @@ import {
   resolveGloveModelPath,
   detectItemType,
   getAgentFolderFromName,
-  resolveAgentModelCandidates
+  resolveAgentModelCandidates,
+  extractAgentModelFromImageUrl
 } from '../utils/modelPathResolver';
 import {
   isLegacyModel,
   getSkinInfo,
   getPaintKitByIndex,
-  getPaintKitPatternName
+  getPaintKitPatternName,
+  getAgentModelPathByDefIndex
 } from '../utils/itemsGameParser';
 import { parseVMAT, parseVCOMPMAT, VMATData } from '../vmatParser';
 import * as THREE from 'three';
@@ -89,6 +91,7 @@ interface ItemInfo {
   paintindex?: number;
   imageurl: string;
   keychains: Keychain[];
+  defindex?: number;
 }
 
 // All the props you can pass in to make the model viewer do tricks
@@ -564,69 +567,91 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
         setLoading(true);
         console.log('Loading model for item:', itemData.full_item_name);
 
-        const detectedType = detectItemType(itemData.full_item_name);
+        const agentHint = extractAgentModelFromImageUrl(itemData.imageurl);
+        const defIndexAgent = itemData.defindex
+          ? await getAgentModelPathByDefIndex(itemData.defindex)
+          : null;
+
+        const detectedType = defIndexAgent
+          ? 'agent'
+          : agentHint
+          ? 'agent'
+          : detectItemType(itemData.full_item_name, itemData.imageurl);
+
+        const agentFolder =
+          defIndexAgent?.folder ??
+          agentHint?.folder ??
+          getAgentFolderFromName(itemData.full_item_name);
+        const agentVariantHint = defIndexAgent?.variant ?? agentHint?.variant;
         setItemType(detectedType);
 
         let candidates: string[] = [];
         let debugLabel = '';
 
         if (detectedType === 'agent') {
-          setError('Agent models are temporarily disabled.');
-          setModelPath('');
-          return;
-        }
-        //Commented out until I figure out agent models
-        // if (detectedType === 'agent') {
-        //   const agentFolder = getAgentFolderFromName(itemData.full_item_name);
-        //   candidates = agentFolder ? resolveAgentModelCandidates(agentFolder) : [];
-        //   debugLabel = `agent ${agentFolder ?? 'unknown'}`;
-        // }
-
-          if (detectedType === 'glove') {
-            const baseGloveName = getBaseGloveName(itemData.full_item_name);
-            console.log('Base glove name:', baseGloveName);
-            const worldPath = resolveGloveModelPath(baseGloveName, true);
-            const viewPath = resolveGloveModelPath(baseGloveName, false);
-            // Prefer world-model (w_) first, then view-model (v_) as fallback
-            candidates = [worldPath, viewPath].filter(Boolean);
-            debugLabel = `glove ${baseGloveName}`;
-          } else {
-            // Extract the base weapon name from the full item name
-            const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
-            console.log('Base weapon name:', baseWeaponName);
-
-            // Check if this weapon/skin combination requires a legacy model
-            const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
-            console.log('Should use legacy model:', useLegacyModel);
-
-            // Resolve the model path with legacy flag
-            const resolvedPath = resolveModelPath(baseWeaponName, useLegacyModel);
-            const fallbackPath = resolveModelPath(baseWeaponName, !useLegacyModel);
-
-            candidates = [resolvedPath, fallbackPath].filter(Boolean);
-            debugLabel = `weapon ${baseWeaponName}`;
+          // Prefer explicit defindex-derived path first
+          if (defIndexAgent?.path) {
+            candidates.push(defIndexAgent.path);
           }
+          if (agentFolder) {
+            candidates.push(...resolveAgentModelCandidates(agentFolder, agentVariantHint));
+          }
+          debugLabel = `agent ${agentFolder ?? 'unknown'}`;
+        } else if (detectedType === 'glove') {
+          const baseGloveName = getBaseGloveName(itemData.full_item_name);
+          console.log('Base glove name:', baseGloveName);
+          const worldPath = resolveGloveModelPath(baseGloveName, true);
+          const viewPath = resolveGloveModelPath(baseGloveName, false);
+          // Prefer world-model (w_) first, then view-model (v_) as fallback
+          candidates = [worldPath, viewPath].filter(Boolean);
+          debugLabel = `glove ${baseGloveName}`;
+        } else {
+          // Extract the base weapon name from the full item name
+          const baseWeaponName = getBaseWeaponName(itemData.full_item_name);
+          console.log('Base weapon name:', baseWeaponName);
 
-          const foundPath = await pickFirstExisting(candidates);
+          // Check if this weapon/skin combination requires a legacy model
+          const useLegacyModel = await isLegacyModel(baseWeaponName, itemData.paintindex);
+          console.log('Should use legacy model:', useLegacyModel);
 
+          // Resolve the model path with legacy flag
+          const resolvedPath = resolveModelPath(baseWeaponName, useLegacyModel);
+          const fallbackPath = resolveModelPath(baseWeaponName, !useLegacyModel);
+
+          candidates = [resolvedPath, fallbackPath].filter(Boolean);
+          debugLabel = `weapon ${baseWeaponName}`;
+        }
+
+        let foundPath = await pickFirstExisting(candidates);
+
+        // If weapon/glove lookup failed, try agent models as a fallback when we have a hint
+        if (!foundPath && detectedType !== 'agent' && agentFolder) {
+          const agentCandidates = resolveAgentModelCandidates(agentFolder, agentVariantHint);
+          foundPath = await pickFirstExisting(agentCandidates);
           if (foundPath) {
-            console.log('Resolved model path:', foundPath);
-            setModelPath(foundPath);
-            setError(null);
-          } else {
-            setError(`Model file not found (${debugLabel})`);
+            setItemType('agent');
+            debugLabel = `agent ${agentFolder}`;
           }
-        } catch (err) {
-          const error = err as Error;
-          console.error('Error loading model:', error);
-          setError(error.message);
-        } finally {
-          setLoading(false);
         }
-      };
 
-      loadModel();
-    }, [itemData]);
+        if (foundPath) {
+          console.log('Resolved model path:', foundPath);
+          setModelPath(foundPath);
+          setError(null);
+        } else {
+          setError(`Model file not found (${debugLabel})`);
+        }
+      } catch (err) {
+        const error = err as Error;
+        console.error('Error loading model:', error);
+        setError(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadModel();
+  }, [itemData]);
 
   // Camera and controls types
   type CameraWithFOV = THREE.Camera & {

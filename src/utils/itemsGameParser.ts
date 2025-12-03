@@ -880,3 +880,30 @@ export const getPaintKitPatternName = async (paintIndex: number): Promise<string
   console.warn(`[getPaintKitPatternName] Could not find pattern name for paint kit ${paintIndex}, using index as fallback`);
   return paintIndex.toString();
 };
+
+/**
+ * Resolve an agent model path (gltf) using the defindex entry in items_game.txt
+ */
+export const getAgentModelPathByDefIndex = async (
+  defIndex: number
+): Promise<{ path: string; folder: string; variant?: string } | null> => {
+  if (!defIndex && defIndex !== 0) return null;
+  const data = await parseItemsGame();
+  const item = data.items[defIndex.toString()];
+  if (!item?.model_player) return null;
+
+  const vmdlPath = item.model_player; // e.g. characters/models/ctm_diver/ctm_diver_varianta.vmdl
+  const gltfPath = vmdlPath
+    .replace(/\.vmdl$/i, '.gltf')
+    .replace(/^/, vmdlPath.startsWith('/') ? '' : '/');
+
+  const fileName = vmdlPath.split('/').pop() || '';
+  const variantMatch = fileName.match(/_((?:variant|var)[a-z0-9]*)\.vmdl$/i);
+  const folderMatch = vmdlPath.match(/characters\/models\/([^/]+)/i);
+
+  return {
+    path: gltfPath,
+    folder: folderMatch ? folderMatch[1] : '',
+    variant: variantMatch ? variantMatch[1].toLowerCase() : undefined
+  };
+};

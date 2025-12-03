@@ -45,6 +45,7 @@ interface ItemInfo {
   imageurl: string;
   keychains: Keychain[];
   normalized_skin_name?: string; // Add normalized skin name with phase/variant
+  defindex?: number;
 }
 
 // Stuff to keep track of in the inspect history
@@ -110,6 +111,7 @@ interface InspectToolProps {
 
 // After the DEFAULT_INSPECT_LINK, add this configuration
 const DEFAULT_INSPECT_LINK = "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20S76561198272588138A45261489134D3056361142884239973";
+// const DEFAULT_INSPECT_LINK = "steam://rungame/730/76561202255233023/+csgo_econ_action_preview%20M755044069398430247A48039407310D7669595782529524077";
 
 // Configuration for welcome message behavior
 const SHOW_WELCOME_FOR_EVERYONE = true; // Set to true to show for everyone, false for only new users

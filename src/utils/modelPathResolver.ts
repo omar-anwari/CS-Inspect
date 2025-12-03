@@ -30,6 +30,7 @@ const AGENT_KEYWORD_MAP: Record<string, string> = {
   sas: 'ctm_sas',
   st6: 'ctm_st6',
   seal: 'ctm_st6',
+  frogman: 'ctm_diver',
   gendarmerie: 'ctm_gendarmerie',
   ksk: 'ctm_gendarmerie',
   diver: 'ctm_diver',
@@ -49,17 +50,29 @@ const AGENT_KEYWORD_MAP: Record<string, string> = {
 
 // Order to try agent variants when a specific one isn't known
 const AGENT_VARIANT_PREFERENCE = [
+  // Professional agents in this build use varf/varf1-5/varg/varh/vari/varj naming
+  'varf',
+  'varf1',
+  'varf2',
+  'varf3',
+  'varf4',
+  'varf5',
+  'varg',
+  'varh',
+  'vari',
+  'varj',
+  // Common variant naming in other agent sets
+  'varianta',
+  'variantb',
+  'variantc',
+  'variantd',
   'variante',
   'variantf',
   'variantg',
   'varianth',
   'varianti',
   'variantj',
-  'variantk',
-  'varianta',
-  'variantb',
-  'variantc',
-  'variantd'
+  'variantk'
 ];
 
 const normalizeName = (value: string) =>
@@ -68,6 +81,36 @@ const normalizeName = (value: string) =>
     .replace(/^stattrak(?:tm)?\s*/i, '')
     .replace(/\u2605/g, '') // remove star/rare characters
     .replace(/[^a-z0-9]/g, '');
+
+export interface AgentModelHint {
+  folder: string;
+  variant?: string;
+}
+
+/**
+ * Tries to pull the agent model/variant from an icon URL (which often contains customplayer_*)
+ */
+export const extractAgentModelFromImageUrl = (imageUrl?: string): AgentModelHint | null => {
+  if (!imageUrl) return null;
+
+  const lowerUrl = imageUrl.toLowerCase();
+  const match = lowerUrl.match(/customplayer_([a-z0-9_]+)/);
+  if (!match) return null;
+
+  // Trim off common icon suffixes like _light or _light_large
+  const rawToken = match[1].replace(/_light(_large)?$/, '');
+
+  let folder = rawToken;
+  let variant: string | undefined;
+
+  const variantMatch = rawToken.match(/(.+)_((?:variant|var)[a-z0-9]*)$/);
+  if (variantMatch) {
+    folder = variantMatch[1];
+    variant = variantMatch[2];
+  }
+
+  return { folder, variant };
+};
 
 /**
  * Extracts the base weapon name from a full item name
@@ -104,7 +147,12 @@ export const getBaseGloveName = (fullItemName: string): string => {
 /**
  * Detect whether an item looks like a weapon, glove, or agent based on its display name
  */
-export const detectItemType = (fullItemName: string): ItemType => {
+export const detectItemType = (fullItemName: string, imageUrl?: string): ItemType => {
+  // Icon URLs for agents usually include customplayer_*
+  if (extractAgentModelFromImageUrl(imageUrl)) {
+    return 'agent';
+  }
+
   const normalized = normalizeName(fullItemName);
   if (normalized in GLOVE_ALIASES) return 'glove';
   if (normalized.includes('handwrap')) return 'glove';
@@ -147,6 +195,12 @@ export const resolveGloveModelPath = (gloveName: string, useWorldModel: boolean 
  */
 export const getAgentFolderFromName = (fullItemName: string): string | null => {
   const lower = (fullItemName || '').toLowerCase();
+
+  // Diver/Frogman themed agents (e.g., Cmdr. Davida "Goggles" Fernandez) should map to ctm_diver
+  if (lower.includes('diver') || lower.includes('frogman') || lower.includes('goggles')) {
+    return 'ctm_diver';
+  }
+
   for (const [keyword, folder] of Object.entries(AGENT_KEYWORD_MAP)) {
     if (lower.includes(keyword)) {
       return folder;
@@ -169,8 +223,18 @@ export const resolveAgentModelCandidates = (
 
   const variants: string[] = [];
   if (variantHint) {
-    const hint = variantHint.toLowerCase().replace(/^variant/, 'variant');
-    variants.push(hint.startsWith('variant') ? hint : `variant${hint}`);
+    const hint = variantHint.toLowerCase();
+    // Accept both var* and variant* naming, add both forms to try
+    if (hint.startsWith('variant')) {
+      variants.push(hint);
+      const short = hint.replace(/^variant/, 'var');
+      if (short && short !== hint) variants.push(short);
+    } else if (hint.startsWith('var')) {
+      variants.push(hint);
+      variants.push(hint.replace(/^var/, 'variant'));
+    } else {
+      variants.push(hint);
+    }
   }
   variants.push(...AGENT_VARIANT_PREFERENCE);
 
