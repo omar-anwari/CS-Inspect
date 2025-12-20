@@ -115,14 +115,17 @@ const WeaponModel: React.FC<{
   itemData?: ItemInfo;
   autoRotate?: boolean;
   modelScale?: number;
+  cameraPreset?: { y: number; z: number; targetY: number };
   onModelLoaded?: () => void;
   itemType?: 'weapon' | 'glove' | 'agent';
-}> = ({ path, itemData, autoRotate = true, modelScale = 0.1, onModelLoaded, itemType = 'weapon' }) => {
+}> = ({ path, itemData, autoRotate = true, modelScale = 0.1, cameraPreset, onModelLoaded, itemType = 'weapon' }) => {
   // State for when things go wrong (which is often)
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const modelRef = useRef<THREE.Group>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [autoScale, setAutoScale] = useState<number | null>(null);
+  const { camera, size } = useThree();
 
   // Pre-validate the GLTF file format (because sometimes you get a 404)
   // Call onModelLoaded when model is loaded and ready
@@ -157,6 +160,60 @@ const WeaponModel: React.FC<{
 
   // Load the model with three.js
   const { scene } = useGLTF(path);
+
+  // Scale agents to 75% of the viewport height based on projected size
+  useEffect(() => {
+    if (!scene || itemType !== 'agent') {
+      setAutoScale(null);
+      return;
+    }
+
+    camera.updateProjectionMatrix();
+    scene.updateMatrixWorld(true);
+
+    const box = new THREE.Box3().setFromObject(scene);
+    if (!Number.isFinite(box.min.y) || !Number.isFinite(box.max.y)) {
+      setAutoScale(null);
+      return;
+    }
+
+    const corners = [
+      new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.max.y, box.max.z)
+    ];
+
+    const projectedYs = corners.map((corner) => corner.clone().project(camera).y);
+    const minY = Math.min(...projectedYs);
+    const maxY = Math.max(...projectedYs);
+    const heightNdc = maxY - minY;
+    if (!Number.isFinite(heightNdc) || heightNdc <= 0) {
+      setAutoScale(null);
+      return;
+    }
+
+    const currentScale = autoScale ?? modelScale ?? 1;
+    const currentFraction = heightNdc / 2; // NDC height range is [-1, 1]
+    const targetFraction = 0.75;
+    const scaleFactor = targetFraction / currentFraction;
+    const nextScale = currentScale * scaleFactor;
+
+    if (!Number.isFinite(nextScale)) {
+      setAutoScale(null);
+      return;
+    }
+
+    if (Math.abs(nextScale - currentScale) / currentScale < 0.01) {
+      return;
+    }
+
+    setAutoScale(nextScale);
+  }, [scene, itemType, size.width, size.height, camera, modelScale, autoScale]);
 
   // Apply textures from VMAT/VCOMPMAT files - this is where the magic happens (hopefully)
   useEffect(() => {
@@ -446,7 +503,7 @@ const WeaponModel: React.FC<{
     <primitive
       object={scene}
       ref={modelRef}
-      scale={modelScale}
+      scale={autoScale ?? modelScale}
       position={[0, 0, 0]}
     />
   );
@@ -464,22 +521,26 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   const [modelScale, setModelScale] = useState(0.1);
   const [modelLoaded, setModelLoaded] = useState(false);
   const [itemType, setItemType] = useState<'weapon' | 'glove' | 'agent'>('weapon');
+  const agentCamera = { y: 0.45, z: 3.2, targetY: 0.45 };
+  const defaultCamera = { y: 0, z: 2.5, targetY: 0 };
+  const cameraPreset = itemType === 'agent' ? agentCamera : defaultCamera;
+
+  const calcScale = (viewHeight: number, minDim: number, maxScale: number) => {
+    const targetHeight = itemType === 'glove' ? minDim : viewHeight * 0.5;
+    const base = Math.max(0.08, Math.min(0.5, targetHeight / 4000));
+    const cap = itemType === 'glove' ? maxScale : 0.5;
+    return Math.min(base, cap);
+  };
 
   // Responsive scaling effect (use ResizeObserver for initial and dynamic sizing)
   useEffect(() => {
-    const calcScale = (minDim: number) => {
-      const base = Math.max(0.08, Math.min(0.5, minDim / 4000));
-      const typeBoost = itemType === 'glove' ? 1 : 1; // gloves are small, but not too close
-      return Math.min(base * typeBoost, 0.2);
-    };
-
     const updateScale = () => {
       if (!containerRef.current) return;
       const { width, height } = containerRef.current.getBoundingClientRect();
       const minDim = Math.min(width, height);
-      // Make the model much smaller (about 1/5 the width/height of the container)
-      // Further increase the denominator to shrink the model more
-      setModelScale(calcScale(minDim));
+      const viewHeight = window.innerHeight || height;
+      // Scale models to 50% of window height; keep gloves using container sizing
+      setModelScale(calcScale(viewHeight, minDim, 0.2));
     };
 
     updateScale(); // Initial call
@@ -511,11 +572,9 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
           if (containerRef.current) {
             const { width, height } = containerRef.current.getBoundingClientRect();
             const minDim = Math.min(width, height);
-            // Make the model much smaller (about 1/5 the width/height of the container)
-            // Further increase the denominator to shrink the model more
-            const base = Math.max(0.08, Math.min(0.5, minDim / 4000));
-            const typeBoost = itemType === 'glove' ? 1 : 1;
-            setModelScale(Math.min(base * typeBoost, 0.8));
+            const viewHeight = window.innerHeight || height;
+            // Scale models to 50% of window height; keep gloves using container sizing
+            setModelScale(calcScale(viewHeight, minDim, 0.8));
           }
         }, 30); // 30ms delay to allow DOM/canvas to settle
       });
@@ -661,10 +720,31 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
 
   type ControlsWithReset = {
     reset?: () => void;
+    target?: THREE.Vector3;
+    update?: () => void;
+    saveState?: () => void;
   };
 
   const controlsRef = useRef<ControlsWithReset | null>(null);
   const cameraRef = useRef<CameraWithFOV | null>(null);
+
+  const applyCameraPreset = (saveState: boolean = false) => {
+    if (cameraRef.current?.position) {
+      cameraRef.current.position.set(0, cameraPreset.y, cameraPreset.z);
+      if (cameraRef.current.fov !== undefined && cameraRef.current.updateProjectionMatrix) {
+        cameraRef.current.fov = 50;
+        cameraRef.current.updateProjectionMatrix();
+      }
+    }
+
+    if (controlsRef.current?.target && controlsRef.current.update) {
+      controlsRef.current.target.set(0, cameraPreset.targetY, 0);
+      controlsRef.current.update();
+      if (saveState && controlsRef.current.saveState) {
+        controlsRef.current.saveState();
+      }
+    }
+  };
 
   //  Lets me mess with the camera and controls from outside
   const CameraControlsManager = () => {
@@ -675,7 +755,8 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
       if (controls) {
         controlsRef.current = controls as ControlsWithReset;
       }
-    }, [camera, controls]);
+      applyCameraPreset(true);
+    }, [camera, controls, itemType, agentCamera.y, agentCamera.z, agentCamera.targetY]);
 
     return null;
   };
@@ -683,17 +764,8 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
   // Expose resetView method to parent component
   useImperativeHandle(ref, () => ({
     resetView: () => {
-      if (cameraRef.current && cameraRef.current.position) {
-        cameraRef.current.position.set(0, 0, 2.5);
-
-        if (cameraRef.current.fov !== undefined && cameraRef.current.updateProjectionMatrix) {
-          cameraRef.current.fov = 50;
-          cameraRef.current.updateProjectionMatrix();
-        }
-      }
-
-      // Reset controls if available
-      if (controlsRef.current && controlsRef.current.reset) {
+      applyCameraPreset(true);
+      if (controlsRef.current?.reset) {
         controlsRef.current.reset();
       }
     }
@@ -715,7 +787,7 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
 
   return (
     <div ref={containerRef} style={{ height: '100%', width: '100%', backgroundPosition: 'center center', backgroundSize: 'cover' }}>
-      <Canvas shadows camera={{ position: [0, 0, 2.5], fov: 50 }} style={{ background: backgroundColor }}>
+      <Canvas shadows camera={{ position: [0, cameraPreset.y, cameraPreset.z], fov: 50 }} style={{ background: backgroundColor }}>
         <CameraControlsManager />
         {/* CS2-inspired warm lighting */}
         <directionalLight
@@ -743,7 +815,17 @@ const ModelViewer = forwardRef<ModelViewerRef, ModelViewerProps>(({
 
         <Suspense fallback={<Box args={[1, 1, 1]} material={new THREE.MeshStandardMaterial({ color: 'hotpink', opacity: 0.5, transparent: true })} />}>
           <ErrorBoundary fallback={<Box args={[1, 1, 1]} material={new THREE.MeshNormalMaterial()} />}>
-            {modelPath && <WeaponModel path={modelPath} itemData={itemData} autoRotate={autoRotate} modelScale={modelScale} itemType={itemType} onModelLoaded={() => setModelLoaded(true)} />}
+            {modelPath && (
+              <WeaponModel
+                path={modelPath}
+                itemData={itemData}
+                autoRotate={autoRotate}
+                modelScale={modelScale}
+                itemType={itemType}
+                cameraPreset={cameraPreset}
+                onModelLoaded={() => setModelLoaded(true)}
+              />
+            )}
             {/* Warm HDRI for subtle reflections */}
             <Environment preset="sunset" background={false} blur={0.2} />
             <fog attach="fog" args={['#000000', 10, 50]} />
