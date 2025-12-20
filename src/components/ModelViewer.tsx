@@ -30,6 +30,62 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { EffectComposer, Bloom, ChromaticAberration, Vignette } from '@react-three/postprocessing';
 
+const eyeTextureCache = new Map<string, THREE.Texture>();
+const eyeMaskDataCache = new Map<string, ImageData>();
+
+const loadImageElement = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = (event) => reject(event);
+    image.src = url;
+  });
+
+const loadEyeTexture = async (
+  url: string,
+  colorSpace: THREE.ColorSpace
+): Promise<THREE.Texture> => {
+  const cacheKey = `${url}:${colorSpace}`;
+  const cached = eyeTextureCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const loader = new THREE.TextureLoader();
+  const texture = await loader.loadAsync(url);
+  texture.colorSpace = colorSpace;
+  texture.flipY = false;
+  texture.needsUpdate = true;
+  eyeTextureCache.set(cacheKey, texture);
+  return texture;
+};
+
+const loadEyeMaskData = async (url: string): Promise<ImageData | null> => {
+  const cached = eyeMaskDataCache.get(url);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const image = await loadImageElement(url);
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return null;
+    }
+    ctx.drawImage(image, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    eyeMaskDataCache.set(url, imageData);
+    return imageData;
+  } catch (error) {
+    console.warn('[AgentEyes] Failed to load eyemask image data:', error);
+    return null;
+  }
+};
+
 // Sometimes Three.js just gives up and I don't want the whole thing to die
 class ErrorBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
@@ -126,6 +182,7 @@ const WeaponModel: React.FC<{
   const [isLoaded, setIsLoaded] = useState(false);
   const [autoScale, setAutoScale] = useState<number | null>(null);
   const { camera, size } = useThree();
+  const eyeMaskIndexRef = useRef<Record<string, string> | null>(null);
 
   // Pre-validate the GLTF file format (because sometimes you get a 404)
   // Call onModelLoaded when model is loaded and ready
@@ -160,6 +217,407 @@ const WeaponModel: React.FC<{
 
   // Load the model with three.js
   const { scene } = useGLTF(path);
+
+  // Agent material fix-ups so vertex colors do not suppress textures
+  useEffect(() => {
+    if (!scene || itemType !== 'agent') {
+      return;
+    }
+
+    let didUpdate = false;
+    const roughnessOverride = 0.9;
+    const metalnessOverride = 0.0;
+    const envMapIntensityOverride = 0.1;
+
+    const ensureColorSpace = (texture: THREE.Texture | null | undefined, colorSpace: THREE.ColorSpace) => {
+      if (!texture || texture.colorSpace === colorSpace) {
+        return;
+      }
+
+      texture.colorSpace = colorSpace;
+      texture.needsUpdate = true;
+      didUpdate = true;
+    };
+
+    scene.traverse((child: THREE.Object3D) => {
+      if (!(child instanceof THREE.Mesh)) {
+        return;
+      }
+
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material) => {
+        if (!(material instanceof THREE.MeshStandardMaterial)) {
+          return;
+        }
+
+        if (material.vertexColors) {
+          material.vertexColors = false;
+          didUpdate = true;
+        }
+
+        if (material.roughnessMap) {
+          material.roughnessMap = null;
+          didUpdate = true;
+        }
+
+        if (material.metalnessMap) {
+          material.metalnessMap = null;
+          didUpdate = true;
+        }
+
+        if (Number.isFinite(material.roughness)) {
+          material.roughness = roughnessOverride;
+          didUpdate = true;
+        }
+
+        if (Number.isFinite(material.metalness)) {
+          material.metalness = metalnessOverride;
+          didUpdate = true;
+        }
+
+        if (Number.isFinite(material.envMapIntensity)) {
+          material.envMapIntensity = envMapIntensityOverride;
+          didUpdate = true;
+        }
+
+        if (material instanceof THREE.MeshPhysicalMaterial) {
+          if (Number.isFinite(material.clearcoat) && material.clearcoat !== 0) {
+            material.clearcoat = 0;
+            didUpdate = true;
+          }
+
+          if (Number.isFinite(material.clearcoatRoughness) && material.clearcoatRoughness !== 1) {
+            material.clearcoatRoughness = 1;
+            didUpdate = true;
+          }
+
+          if (Number.isFinite(material.specularIntensity) && material.specularIntensity !== 0) {
+            material.specularIntensity = 0;
+            didUpdate = true;
+          }
+        }
+
+        ensureColorSpace(material.map, THREE.SRGBColorSpace);
+        ensureColorSpace(material.emissiveMap, THREE.SRGBColorSpace);
+        ensureColorSpace(material.normalMap, THREE.LinearSRGBColorSpace);
+        ensureColorSpace(material.roughnessMap, THREE.LinearSRGBColorSpace);
+        ensureColorSpace(material.metalnessMap, THREE.LinearSRGBColorSpace);
+        ensureColorSpace(material.aoMap, THREE.LinearSRGBColorSpace);
+
+        material.needsUpdate = true;
+      });
+    });
+
+    if (didUpdate) {
+      console.log('[AgentMaterials] Applied material fixes');
+    }
+  }, [scene, itemType]);
+
+  // Overlay default eye textures using eyemask metadata when present - Shit's still brokey
+  useEffect(() => {
+    if (!scene || itemType !== 'agent') {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadEyeMaskIndex = async () => {
+      if (eyeMaskIndexRef.current) {
+        return eyeMaskIndexRef.current;
+      }
+
+      try {
+        const response = await fetch('/characters/models/eyemask_index.json');
+        if (!response.ok) {
+          return null;
+        }
+        const data = await response.json();
+        const entries = data?.entries ?? null;
+        if (entries && typeof entries === 'object') {
+          eyeMaskIndexRef.current = entries as Record<string, string>;
+          return eyeMaskIndexRef.current;
+        }
+      } catch (error) {
+        console.warn('[AgentEyes] Failed to load eyemask index:', error);
+      }
+
+      return null;
+    };
+
+    const resolveEyeMaskPath = (materialName: string, index: Record<string, string>): string | null => {
+      if (!materialName) {
+        return null;
+      }
+
+      if (index[materialName]) {
+        return index[materialName];
+      }
+
+      const target = materialName.toLowerCase();
+      for (const [key, value] of Object.entries(index)) {
+        const keyLower = key.toLowerCase();
+        if (keyLower === target || keyLower.startsWith(target) || target.startsWith(keyLower)) {
+          return value;
+        }
+      }
+
+      return null;
+    };
+
+    const applyEyeOverlay = async (material: THREE.MeshStandardMaterial, maskPath: string, hasUv2: boolean) => {
+      if (material.userData?.eyeOverlayApplied) {
+        return;
+      }
+
+      const eyeMaskTexture = await loadEyeTexture(maskPath, THREE.LinearSRGBColorSpace);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (hasUv2) {
+        material.defines = { ...(material.defines ?? {}), USE_UV2: '' };
+      }
+
+      material.alphaTest = 0.2;
+      material.transparent = true;
+      material.depthWrite = true;
+
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms.eyeMaskMap = { value: eyeMaskTexture };
+        shader.uniforms.eyeMaskStrength = { value: 10.0 };
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <common>',
+          `#include <common>
+uniform sampler2D eyeMaskMap;
+uniform float eyeMaskStrength;`
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+#ifdef USE_UV
+  vec2 eyeUv0 = vUv;
+  float eyeMask0 = texture2D(eyeMaskMap, eyeUv0).r;
+  vec2 eyeUv = eyeUv0;
+  float eyeMaskRaw = eyeMask0;
+  #ifdef USE_UV2
+    vec2 eyeUv1 = vUv2;
+    float eyeMask1 = texture2D(eyeMaskMap, eyeUv1).r;
+    float useUv1 = step(eyeMask0, eyeMask1);
+    eyeUv = mix(eyeUv0, eyeUv1, useUv1);
+    eyeMaskRaw = mix(eyeMask0, eyeMask1, useUv1);
+  #endif
+  float eyeMask = smoothstep(0.005, 0.12, eyeMaskRaw * eyeMaskStrength);
+  diffuseColor.a *= (1.0 - eyeMask);
+#endif`
+        );
+      };
+
+      material.customProgramCacheKey = () => 'agent-eye-cutout';
+      material.userData.eyeOverlayApplied = true;
+      material.needsUpdate = true;
+    };
+
+    const sampleMask = (maskData: ImageData, u: number, v: number): number => {
+      const x = Math.max(0, Math.min(maskData.width - 1, Math.floor(u * (maskData.width - 1))));
+      const y = Math.max(0, Math.min(maskData.height - 1, Math.floor((1 - v) * (maskData.height - 1))));
+      const index = (y * maskData.width + x) * 4;
+      return maskData.data[index] / 255;
+    };
+
+    const buildEyeMeshes = async (mesh: THREE.Mesh, maskPath?: string | null) => {
+      if (mesh.userData?.eyeMeshesApplied) {
+        return;
+      }
+
+      const geometry = mesh.geometry as THREE.BufferGeometry;
+      const uvAttr = geometry.attributes.uv as THREE.BufferAttribute | undefined;
+      const uv2Attr = geometry.attributes.uv2 as THREE.BufferAttribute | undefined;
+      const posAttr = geometry.attributes.position as THREE.BufferAttribute | undefined;
+      const hasUv = Boolean(uvAttr && posAttr);
+
+      geometry.computeBoundingBox();
+      const bbox = geometry.boundingBox;
+      if (!bbox) {
+        return;
+      }
+
+      const normalAttr = geometry.attributes.normal as THREE.BufferAttribute | undefined;
+      const eyeTexture = await loadEyeTexture(
+        '/characters/models/shared/materials/eyes/eyeball_brown_01_color.png',
+        THREE.SRGBColorSpace
+      );
+
+      let leftCenter: THREE.Vector3 | null = null;
+      let rightCenter: THREE.Vector3 | null = null;
+      let leftNormal: THREE.Vector3 | null = null;
+      let rightNormal: THREE.Vector3 | null = null;
+      let radius = 0;
+
+      if (maskPath && hasUv) {
+        const maskData = await loadEyeMaskData(maskPath);
+        if (maskData && !cancelled && posAttr && uvAttr) {
+          const centerX = (bbox.min.x + bbox.max.x) * 0.5;
+
+          const createGroup = () => ({
+            pos: new THREE.Vector3(),
+            normal: new THREE.Vector3(),
+            min: new THREE.Vector3(Infinity, Infinity, Infinity),
+            max: new THREE.Vector3(-Infinity, -Infinity, -Infinity),
+            count: 0
+          });
+
+          const left = createGroup();
+          const right = createGroup();
+          const tempPos = new THREE.Vector3();
+          const tempNormal = new THREE.Vector3();
+
+          for (let i = 0; i < posAttr.count; i += 1) {
+            const u0 = uvAttr.getX(i);
+            const v0 = uvAttr.getY(i);
+            let maskValue = sampleMask(maskData, u0, v0);
+            if (uv2Attr) {
+              const u1 = uv2Attr.getX(i);
+              const v1 = uv2Attr.getY(i);
+              maskValue = Math.max(maskValue, sampleMask(maskData, u1, v1));
+            }
+
+            if (maskValue < 0.04) {
+              continue;
+            }
+
+            tempPos.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+            if (normalAttr) {
+              tempNormal.set(normalAttr.getX(i), normalAttr.getY(i), normalAttr.getZ(i));
+            } else {
+              tempNormal.set(0, 0, 1);
+            }
+
+            const group = tempPos.x < centerX ? left : right;
+            group.pos.add(tempPos);
+            group.normal.add(tempNormal);
+            group.min.min(tempPos);
+            group.max.max(tempPos);
+            group.count += 1;
+          }
+
+          const pickCenter = (group: typeof left) => {
+            if (group.count < 20) {
+              return null;
+            }
+
+            const center = group.pos.multiplyScalar(1 / group.count);
+            const normal = group.normal.lengthSq() > 0 ? group.normal.normalize() : new THREE.Vector3(0, 0, 1);
+            const size = new THREE.Vector3().subVectors(group.max, group.min);
+            const baseRadius = Math.max(size.x, size.y, size.z) * 0.08;
+            const fallbackRadius = (bbox.max.y - bbox.min.y) * 0.04;
+            radius = Math.max(baseRadius, fallbackRadius, 0.05);
+            return { center, normal };
+          };
+
+          const leftResult = pickCenter(left);
+          const rightResult = pickCenter(right);
+          if (leftResult && rightResult) {
+            leftCenter = leftResult.center;
+            rightCenter = rightResult.center;
+            leftNormal = leftResult.normal;
+            rightNormal = rightResult.normal;
+          }
+        }
+      }
+
+      if (!leftCenter || !rightCenter) {
+        const width = bbox.max.x - bbox.min.x;
+        const height = bbox.max.y - bbox.min.y;
+        const depth = bbox.max.z - bbox.min.z;
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+
+        const xOffset = width * 0.18;
+        const yOffset = height * 0.12;
+        const zPos = bbox.max.z - depth * 0.12;
+
+        leftCenter = new THREE.Vector3(center.x - xOffset, center.y + yOffset, zPos);
+        rightCenter = new THREE.Vector3(center.x + xOffset, center.y + yOffset, zPos);
+        leftNormal = new THREE.Vector3(0, 0, 1);
+        rightNormal = new THREE.Vector3(0, 0, 1);
+        radius = Math.max(width, height) * 0.055;
+      }
+
+      if (!leftCenter || !rightCenter || !leftNormal || !rightNormal) {
+        return;
+      }
+
+      const buildEye = (center: THREE.Vector3, normal: THREE.Vector3, sideLabel: string) => {
+        const eyeGeometry = new THREE.SphereGeometry(radius, 16, 12);
+        const eyeMaterial = new THREE.MeshStandardMaterial({
+          map: eyeTexture,
+          roughness: 0.35,
+          metalness: 0
+        });
+
+        const eyeMesh = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        eyeMesh.name = `eye_${sideLabel}`;
+        eyeMesh.position.copy(center).addScaledVector(normal, radius * 0.35);
+        return eyeMesh;
+      };
+
+      const leftEye = buildEye(leftCenter, leftNormal, 'l');
+      const rightEye = buildEye(rightCenter, rightNormal, 'r');
+      mesh.add(leftEye);
+      mesh.add(rightEye);
+      mesh.userData.eyeMeshesApplied = true;
+      console.log('[AgentEyes] Added eyeball meshes to', mesh.name);
+    };
+
+    const applyEyes = async () => {
+      const index = await loadEyeMaskIndex();
+      if (!index || cancelled) {
+        return;
+      }
+
+      const overlayPromises: Promise<void>[] = [];
+      scene.traverse((child: THREE.Object3D) => {
+        if (!(child instanceof THREE.Mesh)) {
+          return;
+        }
+
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        const hasUv2 = Boolean((child.geometry as THREE.BufferGeometry)?.attributes?.uv2);
+
+        materials.forEach((material) => {
+          if (!(material instanceof THREE.MeshStandardMaterial)) {
+            return;
+          }
+
+          const name = material.name ?? '';
+          if (!/head|face|helmet_face/i.test(name)) {
+            return;
+          }
+
+          const maskPath = resolveEyeMaskPath(name, index);
+
+          if (maskPath) {
+            overlayPromises.push(applyEyeOverlay(material, maskPath, hasUv2));
+          }
+
+          overlayPromises.push(buildEyeMeshes(child, maskPath));
+        });
+      });
+
+      if (overlayPromises.length) {
+        await Promise.all(overlayPromises);
+      }
+    };
+
+    applyEyes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scene, itemType]);
 
   // Scale agents to 75% of the viewport height based on projected size
   useEffect(() => {
