@@ -881,18 +881,21 @@ export const getPaintKitPatternName = async (paintIndex: number): Promise<string
   return paintIndex.toString();
 };
 
-/**
- * Resolve an agent model path (gltf) using the defindex entry in items_game.txt
- */
-export const getAgentModelPathByDefIndex = async (
-  defIndex: number
-): Promise<{ path: string; folder: string; variant?: string } | null> => {
-  if (!defIndex && defIndex !== 0) return null;
-  const data = await parseItemsGame();
-  const item = data.items[defIndex.toString()];
-  if (!item?.model_player) return null;
+type AgentModelEntry = { path: string; folder: string; variant?: string };
 
-  const vmdlPath = item.model_player; // e.g. characters/models/ctm_diver/ctm_diver_varianta.vmdl
+let agentModelCache: Record<string, AgentModelEntry> | null = null;
+
+const isAgentItem = (item: ItemData): boolean => {
+  if (!item?.model_player) return false;
+  const isCustomPlayer =
+    (typeof item.name === 'string' && item.name.startsWith('customplayer_')) ||
+    (typeof item.prefab === 'string' && item.prefab.includes('customplayer')) ||
+    (typeof item.item_class === 'string' && item.item_class.includes('customplayer'));
+  const isAgentModelPath = item.model_player.includes('characters/models/');
+  return isCustomPlayer || isAgentModelPath;
+};
+
+const resolveAgentModelEntry = (vmdlPath: string): AgentModelEntry => {
   const gltfPath = vmdlPath
     .replace(/\.vmdl$/i, '.gltf')
     .replace(/^/, vmdlPath.startsWith('/') ? '' : '/');
@@ -906,4 +909,155 @@ export const getAgentModelPathByDefIndex = async (
     folder: folderMatch ? folderMatch[1] : '',
     variant: variantMatch ? variantMatch[1].toLowerCase() : undefined
   };
+};
+
+const buildAgentModelCacheFromRaw = async (): Promise<Record<string, AgentModelEntry>> => {
+  try {
+    const response = await fetch('/items_game.txt');
+    if (!response.ok) {
+      return {};
+    }
+
+    const content = await response.text();
+    const lines = content.split('\n');
+    const cache: Record<string, AgentModelEntry> = {};
+
+    let nestingLevel = 0;
+    let inItems = false;
+    let itemsSectionLevel: number | null = null;
+
+    let currentItemId: string | null = null;
+    let currentItemLevel: number | null = null;
+    let currentName = '';
+    let currentPrefab = '';
+    let currentItemClass = '';
+    let currentModelPlayer = '';
+
+    const resetCurrent = () => {
+      currentItemId = null;
+      currentItemLevel = null;
+      currentName = '';
+      currentPrefab = '';
+      currentItemClass = '';
+      currentModelPlayer = '';
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmedLine = lines[i].trim();
+
+      if (trimmedLine === '"items"' && lines[i + 1]?.trim() === '{') {
+        inItems = true;
+        itemsSectionLevel = nestingLevel + 1;
+      }
+
+      if (trimmedLine.endsWith('{')) {
+        nestingLevel++;
+        if (inItems && currentItemId && currentItemLevel === null) {
+          currentItemLevel = nestingLevel;
+        }
+        continue;
+      }
+
+      if (trimmedLine === '}') {
+        if (inItems && currentItemId && currentItemLevel !== null && nestingLevel === currentItemLevel) {
+          const item: ItemData = {
+            name: currentName,
+            prefab: currentPrefab,
+            item_class: currentItemClass,
+            model_player: currentModelPlayer
+          };
+          if (isAgentItem(item) && item.model_player) {
+            cache[currentItemId] = resolveAgentModelEntry(item.model_player);
+          }
+          resetCurrent();
+        }
+
+        nestingLevel--;
+        if (inItems && itemsSectionLevel !== null && nestingLevel < itemsSectionLevel) {
+          inItems = false;
+          itemsSectionLevel = null;
+        }
+        continue;
+      }
+
+      if (inItems && !currentItemId) {
+        const idMatch = trimmedLine.match(/^"(\d+)"$/);
+        if (idMatch && lines[i + 1]?.trim() === '{') {
+          currentItemId = idMatch[1];
+          currentItemLevel = null;
+          currentName = '';
+          currentPrefab = '';
+          currentItemClass = '';
+          currentModelPlayer = '';
+        }
+      }
+
+      if (inItems && currentItemId) {
+        const kvMatch = trimmedLine.match(/"([^"]+)"\s+"([^"]*)"/);
+        if (kvMatch) {
+          const key = kvMatch[1];
+          const value = kvMatch[2];
+
+          if (key === 'name') {
+            currentName = value;
+          } else if (key === 'prefab') {
+            currentPrefab = value;
+          } else if (key === 'item_class') {
+            currentItemClass = value;
+          } else if (key === 'model_player') {
+            currentModelPlayer = value;
+          }
+        }
+      }
+    }
+
+    return cache;
+  } catch (error) {
+    console.error('Failed to build agent model cache from raw items_game.txt:', error);
+    return {};
+  }
+};
+
+const buildAgentModelCache = async (): Promise<Record<string, AgentModelEntry>> => {
+  if (agentModelCache) return agentModelCache;
+
+  const data = await parseItemsGame();
+  const cache: Record<string, AgentModelEntry> = {};
+
+  for (const [itemId, item] of Object.entries(data.items)) {
+    if (!isAgentItem(item)) continue;
+    if (!item.model_player) continue;
+    cache[itemId] = resolveAgentModelEntry(item.model_player);
+  }
+
+  if (Object.keys(cache).length === 0) {
+    const rawCache = await buildAgentModelCacheFromRaw();
+    agentModelCache = rawCache;
+    return rawCache;
+  }
+
+  agentModelCache = cache;
+  return cache;
+};
+
+/**
+ * Resolve an agent model path (gltf) using the defindex entry in items_game.txt
+ */
+export const getAgentModelPathByDefIndex = async (
+  defIndex: number
+): Promise<{ path: string; folder: string; variant?: string } | null> => {
+  if (!defIndex && defIndex !== 0) return null;
+  const key = defIndex.toString();
+  const cache = await buildAgentModelCache();
+  const hit = cache[key];
+  if (hit) return hit;
+
+  const rawCache = await buildAgentModelCacheFromRaw();
+  const rawHit = rawCache[key];
+  if (rawHit) {
+    agentModelCache = { ...cache, ...rawCache };
+    return rawHit;
+  }
+
+  return null;
 };

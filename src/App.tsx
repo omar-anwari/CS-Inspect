@@ -37,6 +37,7 @@ interface ItemInfo {
   quality_name: string;
   customname: string;
   paintseed: number;
+  defindex?: number;
   imageurl: string;
   keychains: Keychain[];
 }
